@@ -1,0 +1,140 @@
+poly_degree,scale,chain,chain_sum,depth,max_err,runtime,security,total_memory,status,failure_reason
+16384,1099511627776,"(50, 40, 40, 40, 40, 40, 50)",300,7,0.019564856683943876,23.885761904716492,192.0,786432000,success,
+16384,1099511627776,"(50, 40, 40, 40, 40, 40, 60)",310,7,0.019564860609313877,23.501025676727295,192.0,812646400,success,
+16384,1099511627776,"(60, 40, 40, 40, 40, 40, 60)",320,7,0.01956486063949638,21.8759667634964,192.0,838860800,success,
+32768,1099511627776,"(50, 40, 40, 40, 40, 40, 60)",310,7,0.01956554806631671,52.65363173484802,256.0,1625292800,success,
+32768,1099511627776,"(50, 40, 40, 40, 40, 40, 50)",300,7,0.019565550760450585,132.48186185359955,256.0,1572864000,success,
+32768,1099511627776,"(60, 40, 40, 40, 40, 40, 60)",320,7,0.01956555107719052,53.36691236495972,256.0,1677721600,success,
+16384,1073741824,"(50, 30, 30, 30, 30, 30, 60)",260,7,0.019945163083831353,28.49910318851471,192.0,681574400,success,
+16384,1073741824,"(50, 30, 30, 30, 30, 30, 50)",250,7,0.019945688251479386,29.34445400238037,192.0,655360000,success,
+16384,1073741824,"(40, 30, 30, 30, 30, 30, 50)",240,7,0.019946547192334123,21.953586435317995,192.0,629145600,success,
+16384,1073741824,"(40, 30, 30, 30, 30, 30, 40)",230,7,0.019946785579603867,23.748592734336853,192.0,602931200,success,
+16384,1073741824,"(40, 30, 30, 30, 30, 30, 60)",250,7,0.019948789293052327,255.91000456809996,192.0,655360000,success,
+32768,1073741824,"(40, 30, 30, 30, 30, 30, 50)",240,7,0.02169195862788803,46.27552402019501,256.0,1258291200,success,
+32768,1073741824,"(50, 30, 30, 30, 30, 30, 50)",250,7,0.02169329223934649,46.90479667186737,256.0,1310720000,success,
+32768,1073741824,"(50, 30, 30, 30, 30, 30, 60)",260,7,0.021693318519961955,51.89372007846832,256.0,1363148800,success,
+32768,1073741824,"(40, 30, 30, 30, 30, 30, 60)",250,7,0.021693870224194577,53.865483689308164,256.0,1310720000,success,
+32768,1073741824,"(40, 30, 30, 30, 30, 30, 40)",230,7,0.021698116322556214,48.02243504524231,256.0,1205862400,success,
+8192,1048576,"(30, 20, 20, 20, 20, 20, 50)",180,7,3.015245339842216,11.53156886100769,128.0,235929600,success,
+8192,1048576,"(40, 20, 20, 20, 20, 20, 50)",190,7,3.01731886014225,9.163038158416748,128.0,249036800,success,
+8192,1048576,"(40, 20, 20, 20, 20, 20, 40)",180,7,3.0215099446278497,10.269067573547364,128.0,235929600,success,
+8192,1048576,"(40, 20, 20, 20, 20, 20, 60)",200,7,3.026655439851062,11.018448686599731,128.0,262144000,success,
+8192,1048576,"(30, 20, 20, 20, 20, 20, 40)",170,7,3.027523400370799,9.466032767295838,128.0,222822400,success,
+8192,1048576,"(30, 20, 20, 20, 20, 20, 60)",190,7,3.029731422461117,9.95865249633789,128.0,249036800,success,
+8192,1048576,"(30, 20, 20, 20, 20, 20, 30)",160,7,3.0376143468331103,11.31864333152771,192.0,209715200,success,
+8192,1048576,"(20, 20, 20, 20, 20, 20)",120,6,inf,inf,0.0,141557760,failure,failed to find enough qualifying primes
+8192,1048576,"(20, 20, 20, 20, 20, 30)",130,6,inf,inf,0.0,153354240,failure,scale out of bounds
+8192,1048576,"(20, 20, 20, 20, 20, 40)",140,6,inf,inf,0.0,165150720,failure,scale out of bounds
+8192,1048576,"(20, 20, 20, 20, 20, 50)",150,6,inf,inf,0.0,176947200,failure,scale out of bounds
+8192,1048576,"(20, 20, 20, 20, 20, 60)",160,6,inf,inf,0.0,188743680,failure,scale out of bounds
+8192,1048576,"(30, 20, 20, 20, 20, 30)",140,6,inf,inf,0.0,165150720,failure,scale out of bounds
+8192,1048576,"(30, 20, 20, 20, 20, 40)",150,6,inf,inf,0.0,176947200,failure,scale out of bounds
+8192,1048576,"(30, 20, 20, 20, 20, 50)",160,6,inf,inf,0.0,188743680,failure,scale out of bounds
+8192,1048576,"(30, 20, 20, 20, 20, 60)",170,6,inf,inf,0.0,200540160,failure,scale out of bounds
+8192,1048576,"(40, 20, 20, 20, 20, 40)",160,6,inf,inf,0.0,188743680,failure,scale out of bounds
+8192,1048576,"(40, 20, 20, 20, 20, 50)",170,6,inf,inf,0.0,200540160,failure,scale out of bounds
+8192,1048576,"(40, 20, 20, 20, 20, 60)",180,6,inf,inf,0.0,212336640,failure,scale out of bounds
+8192,1048576,"(20, 20, 20, 20, 20, 20, 20)",140,7,inf,inf,0.0,183500800,failure,failed to find enough qualifying primes
+8192,1048576,"(20, 20, 20, 20, 20, 20, 30)",150,7,inf,inf,0.0,196608000,failure,failed to find enough qualifying primes
+8192,1048576,"(20, 20, 20, 20, 20, 20, 40)",160,7,inf,inf,0.0,209715200,failure,failed to find enough qualifying primes
+8192,1048576,"(20, 20, 20, 20, 20, 20, 50)",170,7,inf,inf,0.0,222822400,failure,failed to find enough qualifying primes
+8192,1048576,"(20, 20, 20, 20, 20, 20, 60)",180,7,inf,inf,0.0,235929600,failure,failed to find enough qualifying primes
+8192,1073741824,"(30, 30, 30, 30, 30, 30)",180,6,inf,inf,0.0,212336640,failure,scale out of bounds
+8192,1073741824,"(30, 30, 30, 30, 30, 40)",190,6,inf,inf,0.0,224133120,failure,scale out of bounds
+8192,1073741824,"(30, 30, 30, 30, 30, 50)",200,6,inf,inf,0.0,235929600,failure,scale out of bounds
+8192,1073741824,"(30, 30, 30, 30, 30, 60)",210,6,inf,inf,0.0,247726080,failure,scale out of bounds
+8192,1073741824,"(40, 30, 30, 30, 30, 40)",200,6,inf,inf,0.0,235929600,failure,scale out of bounds
+8192,1073741824,"(40, 30, 30, 30, 30, 50)",210,6,inf,inf,0.0,247726080,failure,scale out of bounds
+8192,1073741824,"(30, 30, 30, 30, 30, 30, 30)",210,7,inf,inf,0.0,275251200,failure,scale out of bounds
+16384,1048576,"(20, 20, 20, 20, 20, 20)",120,6,inf,inf,0.0,283115520,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 30)",130,6,inf,inf,0.0,306708480,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 40)",140,6,inf,inf,0.0,330301440,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 50)",150,6,inf,inf,0.0,353894400,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 60)",160,6,inf,inf,0.0,377487360,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 30)",140,6,inf,inf,0.0,330301440,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 40)",150,6,inf,inf,0.0,353894400,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 50)",160,6,inf,inf,0.0,377487360,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 60)",170,6,inf,inf,0.0,401080320,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 40)",160,6,inf,inf,0.0,377487360,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 50)",170,6,inf,inf,0.0,401080320,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 60)",180,6,inf,inf,0.0,424673280,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 20, 20)",140,7,inf,inf,0.0,367001600,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 20, 30)",150,7,inf,inf,0.0,393216000,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 20, 40)",160,7,inf,inf,0.0,419430400,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 20, 50)",170,7,inf,inf,0.0,445644800,failure,failed to find enough qualifying primes
+16384,1048576,"(20, 20, 20, 20, 20, 20, 60)",180,7,inf,inf,0.0,471859200,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 20, 30)",160,7,inf,inf,0.0,419430400,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 20, 40)",170,7,inf,inf,0.0,445644800,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 20, 50)",180,7,inf,inf,0.0,471859200,failure,failed to find enough qualifying primes
+16384,1048576,"(30, 20, 20, 20, 20, 20, 60)",190,7,inf,inf,0.0,498073600,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 20, 40)",180,7,inf,inf,0.0,471859200,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 20, 50)",190,7,inf,inf,0.0,498073600,failure,failed to find enough qualifying primes
+16384,1048576,"(40, 20, 20, 20, 20, 20, 60)",200,7,inf,inf,0.0,524288000,failure,failed to find enough qualifying primes
+16384,1073741824,"(30, 30, 30, 30, 30, 30)",180,6,inf,inf,0.0,424673280,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 40)",190,6,inf,inf,0.0,448266240,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 50)",200,6,inf,inf,0.0,471859200,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 60)",210,6,inf,inf,0.0,495452160,failure,scale out of bounds
+16384,1073741824,"(40, 30, 30, 30, 30, 40)",200,6,inf,inf,0.0,471859200,failure,scale out of bounds
+16384,1073741824,"(40, 30, 30, 30, 30, 50)",210,6,inf,inf,0.0,495452160,failure,scale out of bounds
+16384,1073741824,"(40, 30, 30, 30, 30, 60)",220,6,inf,inf,0.0,519045120,failure,scale out of bounds
+16384,1073741824,"(50, 30, 30, 30, 30, 50)",220,6,inf,inf,0.0,519045120,failure,scale out of bounds
+16384,1073741824,"(50, 30, 30, 30, 30, 60)",230,6,inf,inf,0.0,542638080,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 30, 30)",210,7,inf,inf,0.0,550502400,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 30, 40)",220,7,inf,inf,0.0,576716800,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 30, 50)",230,7,inf,inf,0.0,602931200,failure,scale out of bounds
+16384,1073741824,"(30, 30, 30, 30, 30, 30, 60)",240,7,inf,inf,0.0,629145600,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 40)",240,6,inf,inf,0.0,566231040,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 50)",250,6,inf,inf,0.0,589824000,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 60)",260,6,inf,inf,0.0,613416960,failure,scale out of bounds
+16384,1099511627776,"(50, 40, 40, 40, 40, 50)",260,6,inf,inf,0.0,613416960,failure,scale out of bounds
+16384,1099511627776,"(50, 40, 40, 40, 40, 60)",270,6,inf,inf,0.0,637009920,failure,scale out of bounds
+16384,1099511627776,"(60, 40, 40, 40, 40, 60)",280,6,inf,inf,0.0,660602880,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 40, 40)",280,7,inf,inf,0.0,734003200,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 40, 50)",290,7,inf,inf,0.0,760217600,failure,scale out of bounds
+16384,1099511627776,"(40, 40, 40, 40, 40, 40, 60)",300,7,inf,inf,0.0,786432000,failure,scale out of bounds
+32768,1048576,"(20, 20, 20, 20, 20, 20)",120,6,inf,inf,0.0,566231040,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 30)",130,6,inf,inf,0.0,613416960,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 40)",140,6,inf,inf,0.0,660602880,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 50)",150,6,inf,inf,0.0,707788800,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 60)",160,6,inf,inf,0.0,754974720,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 30)",140,6,inf,inf,0.0,660602880,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 40)",150,6,inf,inf,0.0,707788800,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 50)",160,6,inf,inf,0.0,754974720,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 60)",170,6,inf,inf,0.0,802160640,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 40)",160,6,inf,inf,0.0,754974720,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 50)",170,6,inf,inf,0.0,802160640,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 60)",180,6,inf,inf,0.0,849346560,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 20, 20)",140,7,inf,inf,0.0,734003200,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 20, 30)",150,7,inf,inf,0.0,786432000,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 20, 40)",160,7,inf,inf,0.0,838860800,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 20, 50)",170,7,inf,inf,0.0,891289600,failure,failed to find enough qualifying primes
+32768,1048576,"(20, 20, 20, 20, 20, 20, 60)",180,7,inf,inf,0.0,943718400,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 20, 30)",160,7,inf,inf,0.0,838860800,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 20, 40)",170,7,inf,inf,0.0,891289600,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 20, 50)",180,7,inf,inf,0.0,943718400,failure,failed to find enough qualifying primes
+32768,1048576,"(30, 20, 20, 20, 20, 20, 60)",190,7,inf,inf,0.0,996147200,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 20, 40)",180,7,inf,inf,0.0,943718400,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 20, 50)",190,7,inf,inf,0.0,996147200,failure,failed to find enough qualifying primes
+32768,1048576,"(40, 20, 20, 20, 20, 20, 60)",200,7,inf,inf,0.0,1048576000,failure,failed to find enough qualifying primes
+32768,1073741824,"(30, 30, 30, 30, 30, 30)",180,6,inf,inf,0.0,849346560,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 40)",190,6,inf,inf,0.0,896532480,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 50)",200,6,inf,inf,0.0,943718400,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 60)",210,6,inf,inf,0.0,990904320,failure,scale out of bounds
+32768,1073741824,"(40, 30, 30, 30, 30, 40)",200,6,inf,inf,0.0,943718400,failure,scale out of bounds
+32768,1073741824,"(40, 30, 30, 30, 30, 50)",210,6,inf,inf,0.0,990904320,failure,scale out of bounds
+32768,1073741824,"(40, 30, 30, 30, 30, 60)",220,6,inf,inf,0.0,1038090240,failure,scale out of bounds
+32768,1073741824,"(50, 30, 30, 30, 30, 50)",220,6,inf,inf,0.0,1038090240,failure,scale out of bounds
+32768,1073741824,"(50, 30, 30, 30, 30, 60)",230,6,inf,inf,0.0,1085276160,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 30, 30)",210,7,inf,inf,0.0,1101004800,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 30, 40)",220,7,inf,inf,0.0,1153433600,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 30, 50)",230,7,inf,inf,0.0,1205862400,failure,scale out of bounds
+32768,1073741824,"(30, 30, 30, 30, 30, 30, 60)",240,7,inf,inf,0.0,1258291200,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 40)",240,6,inf,inf,0.0,1132462080,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 50)",250,6,inf,inf,0.0,1179648000,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 60)",260,6,inf,inf,0.0,1226833920,failure,scale out of bounds
+32768,1099511627776,"(50, 40, 40, 40, 40, 50)",260,6,inf,inf,0.0,1226833920,failure,scale out of bounds
+32768,1099511627776,"(50, 40, 40, 40, 40, 60)",270,6,inf,inf,0.0,1274019840,failure,scale out of bounds
+32768,1099511627776,"(60, 40, 40, 40, 40, 60)",280,6,inf,inf,0.0,1321205760,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 40, 40)",280,7,inf,inf,0.0,1468006400,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 40, 50)",290,7,inf,inf,0.0,1520435200,failure,scale out of bounds
+32768,1099511627776,"(40, 40, 40, 40, 40, 40, 60)",300,7,inf,inf,0.0,1572864000,failure,scale out of bounds

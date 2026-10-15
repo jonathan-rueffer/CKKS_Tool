@@ -170,3 +170,47 @@ class CKKSSearchPolicy:
 
             base_scale_buffer=0
         )
+
+    @classmethod
+    def from_config(
+        cls,
+        config
+    ):
+
+        presets = {
+
+            "default": cls.default,
+
+            "fast": cls.fast,
+
+            "full": cls.full,
+
+            "fuller": cls.fuller,
+        }
+
+        if config.profile != "custom":
+
+            policy = presets[
+                config.profile
+            ]()
+
+        else:
+
+            policy = cls.default()
+
+        return cls(
+
+            allowed_chain_bits=policy.allowed_chain_bits,
+
+            num_scale_options=config.num_scale_options,
+
+            scale_step=config.scale_step,
+
+            base_scale_buffer=config.base_scale_buffer,
+
+            chain_length_offsets=config.chain_length_offsets,
+
+            q0_deltas=config.q0_deltas,
+
+            max_qL=config.max_qL,
+        )

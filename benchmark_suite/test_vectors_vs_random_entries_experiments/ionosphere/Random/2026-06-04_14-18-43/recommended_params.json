@@ -1,0 +1,69 @@
+[
+  {
+    "security": 128,
+    "poly_degree": 8192,
+    "scale": 1125899906842624,
+    "chain": [
+      50,
+      50,
+      50,
+      60
+    ],
+    "memory": {
+      "secret_key": 13762560,
+      "public_key": 27525120,
+      "relin_keys": 110100480,
+      "ciphertext": 27525120,
+      "context": 13762560,
+      "total": 192675840
+    },
+    "inference": {
+      "error": 6.047429224054213e-11,
+      "runtime": 0.016592860221862793
+    }
+  },
+  {
+    "security": 256,
+    "poly_degree": 16384,
+    "scale": 1125899906842624,
+    "chain": [
+      60,
+      50,
+      60
+    ],
+    "memory": {
+      "secret_key": 22282240,
+      "public_key": 44564480,
+      "relin_keys": 133693440,
+      "ciphertext": 44564480,
+      "context": 22282240,
+      "total": 267386880
+    },
+    "inference": {
+      "error": 7.227066056714193e-09,
+      "runtime": 0.02075638771057129
+    }
+  },
+  {
+    "security": 192,
+    "poly_degree": 8192,
+    "scale": 1099511627776,
+    "chain": [
+      60,
+      40,
+      60
+    ],
+    "memory": {
+      "secret_key": 10485760,
+      "public_key": 20971520,
+      "relin_keys": 62914560,
+      "ciphertext": 20971520,
+      "context": 10485760,
+      "total": 125829120
+    },
+    "inference": {
+      "error": 3.132828696017498e-06,
+      "runtime": 0.009957480430603027
+    }
+  }
+]

@@ -1,4 +1,10 @@
-from .experiment import ExperimentConfig, DataConfig, EvaluationConfig, PlottingConfig
+from .experiment import (
+    ExperimentConfig, 
+    DataConfig, 
+    EvaluationConfig, 
+    PlottingConfig, 
+    SearchPolicyConfig
+)
 
 '''
 This file contains the default configurations used when running the tool, can be overwritten 
@@ -18,4 +24,5 @@ DEFAULT_EXPERIMENT_CONFIG = ExperimentConfig(
     plotting=PlottingConfig(
         error_tol=None
     ),
+    search=SearchPolicyConfig()
 )

@@ -1,0 +1,19 @@
+{
+  "poly_degree": 8192,
+  "scale": 1099511627776,
+  "chain": [
+    40,
+    40,
+    40,
+    50
+  ],
+  "security": 128,
+  "memory": {
+    "secret_key": 11141120,
+    "public_key": 22282240,
+    "relin_keys": 89128960,
+    "ciphertext": 22282240,
+    "context": 11141120,
+    "total": 155975680
+  }
+}

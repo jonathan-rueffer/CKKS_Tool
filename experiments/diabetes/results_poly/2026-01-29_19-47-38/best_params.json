@@ -1,0 +1,20 @@
+{
+  "poly_degree": 16384,
+  "scale": 1125899906842624,
+  "chain": [
+    60,
+    50,
+    50,
+    50,
+    60
+  ],
+  "security": 192,
+  "memory": {
+    "secret_key": 35389440,
+    "public_key": 70778880,
+    "relin_keys": 353894400,
+    "ciphertext": 70778880,
+    "context": 35389440,
+    "total": 566231040
+  }
+}

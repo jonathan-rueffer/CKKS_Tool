@@ -1,4 +1,5 @@
 from .base import BaseModel
+import numpy as np
 
 '''
 This file contains the class that defines how a pre-existing model can be wrapped to fit the
@@ -22,9 +23,10 @@ class WrappedModel(BaseModel):
         return self._encrypted_forward_fn(x_enc)
     
     def __call__(self, x):  
-        if hasattr(x, "dot"):
-            return self.forward_encrypted(x) 
-        return self.forward_plain(x)
+        if isinstance(x, np.ndarray):
+            return self.forward_plain(x)
+
+        return self.forward_encrypted(x)
 
     @property
     def multiplicative_depth(self):

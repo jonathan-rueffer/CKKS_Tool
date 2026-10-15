@@ -59,15 +59,67 @@ class PlottingConfig:
         if self.error_tol is not None and self.error_tol <= 0:
             raise ValueError("plotting.error_tol must be > 0 or None")
 
+
+@dataclass(frozen=True)
+class SearchPolicyConfig:
+
+    profile: str = "default"
+
+    num_scale_options: int = 3
+    scale_step: int = 10
+
+    base_scale_buffer: int = 5
+
+    chain_length_offsets: tuple[int,...] = (2,3)
+
+    q0_deltas: tuple[int,...] = (0,10,20)
+
+    max_qL: int = 60
+
+    def to_dict(self):
+        return asdict(self)
+
+    def __post_init__(self):
+
+        valid_profiles = {
+            "default",
+            "fast",
+            "full",
+            "fuller",
+            "custom"
+        }
+
+        if self.profile not in valid_profiles:
+            raise ValueError(
+                f"search.profile must be one of {valid_profiles}"
+            )
+
+        if self.num_scale_options <= 0:
+            raise ValueError(
+                "search.num_scale_options must be >0"
+            )
+
+        if self.scale_step <=0:
+            raise ValueError(
+                "search.scale_step must be >0"
+            )
+
+        if self.max_qL <=0:
+            raise ValueError(
+                "search.max_qL must be >0"
+            )
+
 @dataclass(frozen=True)
 class ExperimentConfig:
     data: DataConfig
     evaluation: EvaluationConfig
     plotting: PlottingConfig
+    search: SearchPolicyConfig
 
     def to_dict(self):
         return {
             "data": self.data.to_dict(),
             "evaluation": self.evaluation.to_dict(),
             "plotting": self.plotting.to_dict(),
+            "search": self.search.to_dict()
         }

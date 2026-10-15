@@ -5,7 +5,10 @@ from ckks_param_tool.config import (
 )
 
 #Test vectors:
-from ckks_param_tool.data import generate_representative_test_vectors
+from ckks_param_tool.data import (
+    generate_representative_test_vectors,
+    generate_test_vectors
+)
 
 #Bit Estimation:
 from ckks_param_tool.data.generators import estimate_precision_bits
@@ -19,7 +22,8 @@ from ckks_param_tool.evaluation import (
 #Search:
 from ckks_param_tool.search import (
     CKKSParameterSearchSpace,
-    CKKSParameterSelector
+    CKKSParameterSelector,
+    CKKSSearchPolicy
 )
 
 #Plotting:
@@ -47,12 +51,13 @@ This file contains the class that represents the core tool logic.
 class Experiment:
 
     # this is the object that the user loads
-    def __init__(self, dataset, model, config=None):
+    def __init__(self, dataset, model, config=None, test_vector_policy="representative"):
         self.dataset = dataset # the client dataset
         self.model = model # the model
         self.config = load_experiment_config(config) # optional config file
         self.results = None 
         self.pareto_df = None 
+        self.test_vector_policy = test_vector_policy
 
     # helper function for byte conversion for printing
     def _format_bytes(self, n: int) -> str:
@@ -123,9 +128,10 @@ class Experiment:
     def run(self, verbose: bool = False) -> ExperimentResult:
 
         # generate the test vectors from the dataset
-        test_vectors = generate_representative_test_vectors(
+        test_vectors = generate_test_vectors(
             self.dataset, 
-            self.config.data
+            self.config.data,
+            test_vector_policy = self.test_vector_policy
         )
 
         # initialze the evaluator
@@ -137,10 +143,20 @@ class Experiment:
         # determine the estimated bits of precision from the dataset
         bits_int, bits_dec = estimate_precision_bits(self.dataset)
 
+        # define search policy from config
+        policy = CKKSSearchPolicy.from_config(self.config.search)
+
+        search_space = CKKSParameterSearchSpace(
+            self.model.multiplicative_depth,
+            bits_int,
+            bits_dec,
+            policy=policy
+        )
+
         # intialize the selector
         selector = CKKSParameterSelector(
             evaluator=evaluator,
-            search_space=CKKSParameterSearchSpace(self.model.multiplicative_depth, bits_int, bits_dec)
+            search_space=search_space
         )
 
         # generate the search space and evaluate it

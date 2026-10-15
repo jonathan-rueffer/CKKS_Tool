@@ -3,6 +3,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.linear_model import LogisticRegression
 from sklearn.linear_model import LinearRegression
 from .linear import LinearModel
+from .wrapper import WrappedModel
+from sklearn.neural_network import MLPClassifier
 
 '''
 This file contains helper functions to train simply models on a dataset that are compatible 
@@ -37,3 +39,4 @@ def train_linear_regression_model(X, y):
         weights=clf.coef_,
         bias=clf.intercept_,
     )
+

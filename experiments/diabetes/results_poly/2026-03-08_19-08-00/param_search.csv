@@ -1,0 +1,54 @@
+poly_degree,scale,chain,chain_sum,depth,max_err,runtime,security,total_memory,status,failure_reason
+8192,274877906944,"(40, 40, 40)",120,3,inf,inf,0.0,94371840,failure,scale out of bounds
+8192,274877906944,"(40, 40, 50)",130,3,inf,inf,0.0,102236160,failure,scale out of bounds
+8192,274877906944,"(40, 40, 60)",140,3,inf,inf,0.0,110100480,failure,scale out of bounds
+8192,274877906944,"(50, 40, 50)",140,3,inf,inf,0.0,110100480,failure,scale out of bounds
+8192,274877906944,"(50, 40, 60)",150,3,inf,inf,0.0,117964800,failure,scale out of bounds
+8192,274877906944,"(60, 40, 60)",160,3,inf,inf,0.0,125829120,failure,scale out of bounds
+8192,274877906944,"(40, 40, 40, 40)",160,4,inf,inf,0.0,146800640,failure,scale out of bounds
+8192,274877906944,"(40, 40, 40, 50)",170,4,inf,inf,0.0,155975680,failure,scale out of bounds
+8192,274877906944,"(40, 40, 40, 60)",180,4,inf,inf,0.0,165150720,failure,scale out of bounds
+8192,274877906944,"(50, 40, 40, 50)",180,4,inf,inf,0.0,165150720,failure,scale out of bounds
+8192,274877906944,"(50, 40, 40, 60)",190,4,inf,inf,0.0,174325760,failure,scale out of bounds
+8192,274877906944,"(60, 40, 40, 60)",200,4,inf,inf,0.0,183500800,failure,scale out of bounds
+8192,281474976710656,"(50, 50, 50)",150,3,inf,inf,0.0,117964800,failure,scale out of bounds
+8192,281474976710656,"(50, 50, 60)",160,3,inf,inf,0.0,125829120,failure,scale out of bounds
+8192,281474976710656,"(60, 50, 60)",170,3,inf,inf,0.0,133693440,failure,scale out of bounds
+8192,281474976710656,"(50, 50, 50, 50)",200,4,inf,inf,0.0,183500800,failure,scale out of bounds
+8192,281474976710656,"(50, 50, 50, 60)",210,4,inf,inf,0.0,192675840,failure,scale out of bounds
+16384,274877906944,"(40, 40, 40)",120,3,inf,inf,0.0,188743680,failure,scale out of bounds
+16384,274877906944,"(40, 40, 50)",130,3,inf,inf,0.0,204472320,failure,scale out of bounds
+16384,274877906944,"(40, 40, 60)",140,3,inf,inf,0.0,220200960,failure,scale out of bounds
+16384,274877906944,"(50, 40, 50)",140,3,inf,inf,0.0,220200960,failure,scale out of bounds
+16384,274877906944,"(50, 40, 60)",150,3,inf,inf,0.0,235929600,failure,scale out of bounds
+16384,274877906944,"(60, 40, 60)",160,3,inf,inf,0.0,251658240,failure,scale out of bounds
+16384,274877906944,"(40, 40, 40, 40)",160,4,inf,inf,0.0,293601280,failure,scale out of bounds
+16384,274877906944,"(40, 40, 40, 50)",170,4,inf,inf,0.0,311951360,failure,scale out of bounds
+16384,274877906944,"(40, 40, 40, 60)",180,4,inf,inf,0.0,330301440,failure,scale out of bounds
+16384,274877906944,"(50, 40, 40, 50)",180,4,inf,inf,0.0,330301440,failure,scale out of bounds
+16384,274877906944,"(50, 40, 40, 60)",190,4,inf,inf,0.0,348651520,failure,scale out of bounds
+16384,274877906944,"(60, 40, 40, 60)",200,4,inf,inf,0.0,367001600,failure,scale out of bounds
+16384,281474976710656,"(50, 50, 50)",150,3,inf,inf,0.0,235929600,failure,scale out of bounds
+16384,281474976710656,"(50, 50, 60)",160,3,inf,inf,0.0,251658240,failure,scale out of bounds
+16384,281474976710656,"(60, 50, 60)",170,3,inf,inf,0.0,267386880,failure,scale out of bounds
+16384,281474976710656,"(50, 50, 50, 50)",200,4,inf,inf,0.0,367001600,failure,scale out of bounds
+16384,281474976710656,"(50, 50, 50, 60)",210,4,inf,inf,0.0,385351680,failure,scale out of bounds
+16384,281474976710656,"(60, 50, 50, 60)",220,4,inf,inf,0.0,403701760,failure,scale out of bounds
+32768,274877906944,"(40, 40, 40)",120,3,inf,inf,0.0,377487360,failure,scale out of bounds
+32768,274877906944,"(40, 40, 50)",130,3,inf,inf,0.0,408944640,failure,scale out of bounds
+32768,274877906944,"(40, 40, 60)",140,3,inf,inf,0.0,440401920,failure,scale out of bounds
+32768,274877906944,"(50, 40, 50)",140,3,inf,inf,0.0,440401920,failure,scale out of bounds
+32768,274877906944,"(50, 40, 60)",150,3,inf,inf,0.0,471859200,failure,scale out of bounds
+32768,274877906944,"(60, 40, 60)",160,3,inf,inf,0.0,503316480,failure,scale out of bounds
+32768,274877906944,"(40, 40, 40, 40)",160,4,inf,inf,0.0,587202560,failure,scale out of bounds
+32768,274877906944,"(40, 40, 40, 50)",170,4,inf,inf,0.0,623902720,failure,scale out of bounds
+32768,274877906944,"(40, 40, 40, 60)",180,4,inf,inf,0.0,660602880,failure,scale out of bounds
+32768,274877906944,"(50, 40, 40, 50)",180,4,inf,inf,0.0,660602880,failure,scale out of bounds
+32768,274877906944,"(50, 40, 40, 60)",190,4,inf,inf,0.0,697303040,failure,scale out of bounds
+32768,274877906944,"(60, 40, 40, 60)",200,4,inf,inf,0.0,734003200,failure,scale out of bounds
+32768,281474976710656,"(50, 50, 50)",150,3,inf,inf,0.0,471859200,failure,scale out of bounds
+32768,281474976710656,"(50, 50, 60)",160,3,inf,inf,0.0,503316480,failure,scale out of bounds
+32768,281474976710656,"(60, 50, 60)",170,3,inf,inf,0.0,534773760,failure,scale out of bounds
+32768,281474976710656,"(50, 50, 50, 50)",200,4,inf,inf,0.0,734003200,failure,scale out of bounds
+32768,281474976710656,"(50, 50, 50, 60)",210,4,inf,inf,0.0,770703360,failure,scale out of bounds
+32768,281474976710656,"(60, 50, 50, 60)",220,4,inf,inf,0.0,807403520,failure,scale out of bounds

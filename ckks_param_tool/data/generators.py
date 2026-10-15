@@ -76,6 +76,22 @@ _SAMPLERS = {
     "student_t": _sample_student_t
 }
 
+
+def generate_test_vectors(
+    X,
+    config: DataConfig,
+    test_vector_policy
+):
+
+    if test_vector_policy == "representative":
+        return generate_representative_test_vectors(X, config)
+
+    if test_vector_policy == "random_rows":
+        return generate_random_row_test_vectors(X, config)
+
+    raise ValueError(f"Unknown test vector method: {test_vector_policy}")
+
+
 # generates the representative test vectors
 def generate_representative_test_vectors(
     X,
@@ -141,39 +157,39 @@ def estimate_precision_bits(
 
 # testing function that takes random dataset entries rather than representative test vectors:
 
-# def generate_representative_test_vectors(
-#     X,
-#     config: DataConfig
-# ):
-#     """
-#     Generate random test vectors sampled directly from the dataset.
+def generate_random_row_test_vectors(
+    X,
+    config: DataConfig
+):
+    """
+    Generate random test vectors sampled directly from the dataset.
 
-#     Parameters
-#     ----------
-#     X : np.ndarray
-#         Client-side feature matrix.
-#     config : DataConfig
-#         Configuration containing num_samples and optional rounding.
+    Parameters
+    ----------
+    X : np.ndarray
+        Client-side feature matrix.
+    config : DataConfig
+        Configuration containing num_samples and optional rounding.
 
-#     Returns
-#     -------
-#     np.ndarray
-#         Shape (num_samples, num_features)
-#     """
+    Returns
+    -------
+    np.ndarray
+        Shape (num_samples, num_features)
+    """
 
-#     num_samples = config.num_samples
-#     rounding = config.rounding
+    num_samples = config.num_samples
+    rounding = config.rounding
 
-#     rng = np.random.default_rng(42)
+    rng = np.random.default_rng(42)
 
-#     if num_samples > len(X):
-#         raise ValueError("num_samples cannot exceed dataset size when sampling without replacement")
+    if num_samples > len(X):
+        raise ValueError("num_samples cannot exceed dataset size when sampling without replacement")
 
-#     # Randomly select rows from dataset
-#     indices = rng.choice(len(X), size=num_samples, replace=False)
-#     test_vectors = X[indices]
+    # Randomly select rows from dataset
+    indices = rng.choice(len(X), size=num_samples, replace=False)
+    test_vectors = X[indices]
 
-#     if rounding is not None:
-#         test_vectors = np.round(test_vectors, rounding)
+    if rounding is not None:
+        test_vectors = np.round(test_vectors, rounding)
 
-#     return test_vectors
+    return test_vectors
