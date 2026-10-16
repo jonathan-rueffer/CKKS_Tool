@@ -6,11 +6,30 @@ from .encrypted_run import run_encrypted_inference
 from ckks_param_tool.params import CKKSParams
 from ckks_param_tool.encryption import TenSEALBackend
 from ckks_param_tool.config import EvaluationConfig
+from ckks_param_tool.models.base import predict
 
 '''
 This file contains the TenSEAL inference evaluation class, which defines how a given
 recommended parameter set will be evaluated on real dataset entries.
 '''
+# task-level comparison of encrypted and plaintext outputs on real rows:
+#   max_relative_error   : worst |decrypted - plaintext| relative to the largest plaintext output
+#                          of that row (most meaningful for regression)
+#   prediction_agreement : fraction of rows whose predicted class is the same encrypted and in
+#                          plaintext (classification only)
+def task_metrics(task: str, outputs) -> dict:
+    rel = [
+        float(np.max(np.abs(dec - plain)) / max(float(np.max(np.abs(plain))), 1e-300))
+        for dec, plain in outputs
+    ]
+    agreement = None
+    if task in ("binary", "multiclass"):
+        agreement = float(np.mean([
+            np.array_equal(predict(task, dec), predict(task, plain)) for dec, plain in outputs
+        ]))
+    return {"max_relative_error": max(rel), "prediction_agreement": agreement}
+
+
 class TenSEALInferenceEvaluator(InferenceEvaluator):
 
     def __init__(self, model, X, config: EvaluationConfig | None = None):
@@ -31,7 +50,7 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
         try:
             backend = self.backend(params, n_threads=self.config.n_threads)
 
-            errors, runtimes = run_encrypted_inference(
+            errors, runtimes, outputs = run_encrypted_inference(
                 backend,
                 self.model,
                 self.X[self.sample_idx, :],
@@ -43,6 +62,7 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
                 error=max(errors), # maximum error across dataset samples
                 runtime=float(np.median(runtimes)), # median runtime across dataset samples
                 runtime_std=float(np.std(runtimes)),
+                **task_metrics(getattr(self.model, "task", "regression"), outputs),
             )
 
         # handle case of encrypted inference fails

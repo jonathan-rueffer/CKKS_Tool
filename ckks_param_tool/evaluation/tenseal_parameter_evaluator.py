@@ -30,7 +30,7 @@ class TenSEALParameterEvaluator(ParameterEvaluator):
             # initialize TenSEAL backend using parameters (includes key generation)
             backend = self.backend(params, n_threads=self.config.n_threads)
 
-            errors, runtimes = run_encrypted_inference(
+            errors, runtimes, _ = run_encrypted_inference(
                 backend,
                 self.model,
                 self.test_vectors,

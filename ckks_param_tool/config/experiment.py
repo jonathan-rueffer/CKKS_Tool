@@ -45,7 +45,7 @@ class DataConfig:
 
 @dataclass(frozen=True)
 class EvaluationConfig:
-    num_samples: int = 10 # number of real dataset entries used to evaluate recommended parameters
+    num_samples: int = 100 # number of real dataset entries used to evaluate recommended parameters
     warmup_runs: int = 1 # untimed encrypted inferences run before timing each candidate
     timing_repeats: int = 1 # timed passes over the test vectors per candidate
     n_threads: Optional[int] = None # TenSEAL worker threads (None = all cores)

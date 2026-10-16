@@ -8,31 +8,6 @@ This file contains the functions that print the tool results to the console usin
 
 console = Console()
 
-# helper function for bit conversion 
-def format_bytes(n: int) -> str:
-    for unit in ["B", "KB", "MB", "GB"]:
-        if n < 1024:
-            return f"{n:.2f} {unit}"
-        n /= 1024
-    return f"{n:.2f} TB"
-
-# function that formats the memory metric to show for each CKKS component
-def memory_table(mem: dict[str, int]) -> Table:
-    table = Table(show_header=True, header_style="bold cyan")
-    table.add_column("Component")
-    table.add_column("Size", justify="right")
-
-    for k, v in mem.items():
-        if k != "total":
-            table.add_row(k.replace("_", " ").title(), format_bytes(v))
-
-    table.add_row(
-        "[bold]Total[/bold]",
-        f"[bold]{format_bytes(mem['total'])}[/bold]"
-    )
-
-    return table
-
 # function that prints the recommended params and their metrics
 def print_experiment_summary(results):
 
@@ -57,10 +32,10 @@ def print_experiment_summary(results):
         metrics.add_row("Inference error", f"{inference.error:.4e}")
         metrics.add_row("Precision (bits)", f"{inference.precision_bits:.1f}")
         metrics.add_row("Median runtime (s)", f"{inference.runtime:.4f}")
-
-        mem = params.memory
+        metrics.add_row("Max. relative error", f"{inference.max_relative_error:.2e}")
+        if inference.prediction_agreement is not None:
+            metrics.add_row("Prediction agreement", f"{inference.prediction_agreement:.1%}")
 
         console.print(Panel(table, title="Parameter Selection"))
-        console.print(Panel(memory_table(mem), title="Estimated Memory Usage"))
         console.print(Panel(metrics, title="Encrypted Inference"))
         console.print("\n" + "-"*120 + "\n") 

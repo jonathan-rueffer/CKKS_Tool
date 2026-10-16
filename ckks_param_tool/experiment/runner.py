@@ -72,7 +72,10 @@ class Experiment:
             print(f"Chain           : {params.chain}")
             print(f"Security (bits) : {params.security_score}")
             print(f"Inference error : {inf.error:.4e} ({inf.precision_bits:.1f} bits)")
-            print(f"Inference time  : {inf.runtime:.4f}s\n")
+            print(f"Inference time  : {inf.runtime:.4f}s")
+            if inf.prediction_agreement is not None:
+                print(f"Prediction agreement : {inf.prediction_agreement:.1%}")
+            print()
 
     def _save_config(self, run_dir: Path):
         with open(run_dir / "config.json", "w") as f:
@@ -108,7 +111,6 @@ class Experiment:
                 "scale": params.scale,
                 "log_scale": params.log_scale,
                 "chain": list(params.chain),
-                "memory": params.memory,
                 "inference": inference.to_dict(),
             })
 

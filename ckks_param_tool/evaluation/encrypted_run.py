@@ -5,7 +5,8 @@ import numpy as np
 This file contains the shared measurement loop used by both evaluators.
 '''
 
-# runs encrypted inference on every input and returns (errors, runtimes).
+# runs encrypted inference on every input and returns (errors, runtimes, outputs), where outputs
+# holds one (decrypted output, plaintext output) pair per timed inference.
 #   - warmup_runs untimed inferences are run first so one-off costs (caches, lazy allocation,
 #     thread start-up) are not attributed to the first timed input
 #   - every input is timed timing_repeats times with a monotonic high-resolution clock
@@ -18,6 +19,7 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
 
     errors = []
     runtimes = []
+    outputs = []
     max_output = 0.0
 
     for _ in range(timing_repeats):
@@ -31,6 +33,7 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
             plain_y = np.atleast_1d(np.asarray(model(x), dtype=float))
             dec_y = np.atleast_1d(dec_y)[: plain_y.size]
             errors.append(float(np.max(np.abs(dec_y - plain_y))))
+            outputs.append((dec_y, plain_y))
             max_output = max(max_output, float(np.max(np.abs(plain_y))))
 
     # an error at least as large as the outputs themselves leaves no correct bit: either the
@@ -42,4 +45,4 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
             f">= max |output| {max_output:.3g}"
         )
 
-    return errors, runtimes
+    return errors, runtimes, outputs

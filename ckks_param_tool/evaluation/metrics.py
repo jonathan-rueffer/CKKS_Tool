@@ -41,6 +41,8 @@ class InferenceEvaluationResult:
     runtime_std: float = float("nan")
     status: str = "success"
     failure_reason: str = ""
+    max_relative_error: float = float("nan") # worst error relative to the output magnitude
+    prediction_agreement: float | None = None # fraction of rows with the same predicted class
 
     @property
     def precision_bits(self) -> float:

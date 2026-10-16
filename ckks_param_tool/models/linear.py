@@ -1,30 +1,30 @@
-from .base import BaseModel
+import numpy as np
+
+from .base import BaseModel, TASKS
 
 '''
 This file contains the class for a linear machine learning model that can be used by the tool.
-Notably, this function only includes multiplications and addition, and not an approximated 
-activation function for simplicity. 
+Notably, it only includes multiplications and additions, without an approximated activation
+function. The weights are either a vector (one output: a regression value or a binary logit)
+or a matrix with one column per output (e.g. one logit per class).
 '''
 class LinearModel(BaseModel):
-    def __init__(self, weights, bias):
-        self.W = weights
-        self.b = bias
+    def __init__(self, weights, bias, task: str = "regression"):
+        if task not in TASKS:
+            raise ValueError(f"task must be one of {TASKS}")
+        self.W = np.asarray(weights, dtype=float)
+        self.b = bias if np.isscalar(bias) else np.asarray(bias, dtype=float)
+        self.task = task
 
     def forward_plain(self, x):
-        return x @ self.W + self.b # @ operation supports plaintext vectors
+        return x @ self.W + self.b
 
     def forward_encrypted(self, x_enc):
-        return x_enc.dot(self.W) + self.b # .dot operation supports ciphertext vectors
+        if self.W.ndim == 1:
+            return x_enc.dot(self.W) + self.b # one output: dot product
+        return x_enc.matmul(self.W) + self.b.tolist() # one output per column: vector-matrix product
 
-    def __call__(self, x):
-
-        # conditionals to automatically handle if this model is called on plaintext or ciphertext
-        if hasattr(x, "dot"):        
-            return self.forward_encrypted(x)
-        else:                        
-            return self.forward_plain(x)
-
-    # since this is a standard linear model, the depth is 1
+    # one ciphertext-plaintext multiplication (dot product or vector-matrix product)
     @property
     def multiplicative_depth(self):
         return 1

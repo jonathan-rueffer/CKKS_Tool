@@ -27,12 +27,6 @@ class PolynomialModel(BaseModel):
         #h3 = x_enc.dot(self.W3) + self.b3
         return h1 * h2 #* h3
 
-    def __call__(self, x):
-        if hasattr(x, "dot"):        
-            return self.forward_encrypted(x)
-        else:                        
-            return self.forward_plain(x)
-
     @property
     def multiplicative_depth(self):
         return 2

@@ -80,7 +80,8 @@ def build_wrapped_mnist_model(model):
     return WrappedModel(
         plain_forward,
         depth=5,
-        encrypted_forward_fn=encrypted_forward_fn
+        encrypted_forward_fn=encrypted_forward_fn,
+        task="multiclass",
     )
 
 def train_mnist_model(X, y):

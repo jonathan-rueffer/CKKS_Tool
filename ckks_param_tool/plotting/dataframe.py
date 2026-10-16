@@ -3,7 +3,7 @@ import pandas as pd
 COLUMNS = [
     "poly_degree", "scale", "log_scale", "chain", "chain_sum", "chain_length", "levels",
     "max_err", "precision_bits", "runtime", "runtime_std", "eval_seconds", "security",
-    "total_memory", "status", "failure_reason",
+    "status", "failure_reason",
 ]
 
 '''
@@ -31,7 +31,6 @@ def results_to_dataframe(results):
             "runtime_std": metrics.runtime_std,
             "eval_seconds": metrics.eval_seconds,
             "security": metrics.security_bits,
-            "total_memory": params.memory["total"],
             "status": metrics.status,
             "failure_reason": metrics.failure_reason
         })

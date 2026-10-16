@@ -137,6 +137,8 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
             "baseline_chain": tuple(base["chain"]),
             "baseline_precision_bits": base["real_rows"]["precision_bits"],
             "baseline_runtime": base["real_rows"]["runtime"],
+            "baseline_max_relative_error": base["real_rows"].get("max_relative_error"),
+            "baseline_prediction_agreement": base["real_rows"].get("prediction_agreement"),
         }
         if rec["found"]:
             row.update({
@@ -145,6 +147,8 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
                 "tool_security": rec["security"],
                 "tool_precision_bits": rec["real_rows"]["precision_bits"],
                 "tool_runtime": rec["real_rows"]["runtime"],
+                "tool_max_relative_error": rec["real_rows"].get("max_relative_error"),
+                "tool_prediction_agreement": rec["real_rows"].get("prediction_agreement"),
                 # measured on the same real rows
                 "speedup": safe_ratio(base["real_rows"]["runtime"], rec["real_rows"]["runtime"]),
                 "precision_gain_bits": rec["real_rows"]["precision_bits"] - base["real_rows"]["precision_bits"],
