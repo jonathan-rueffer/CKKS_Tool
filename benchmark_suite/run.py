@@ -36,8 +36,15 @@ def _evaluate_candidates(params_list, model, X, config, policy):
     return results_to_dataframe([(p, evaluator.evaluate(p)) for p in params_list])
 
 
+# real rows used to evaluate recommendations and the baseline: all client rows, except for
+# workloads where one encrypted inference takes seconds
+REAL_ROWS = {"mnist": 200}
+
+
 def run_dataset(name: str, output_root: Path, config=None, fuller: bool = True) -> Path:
     loader, trainer, _ = DATASETS[name]
+    config = load_experiment_config(config).to_dict()
+    config["evaluation"]["num_samples"] = REAL_ROWS.get(name, 0) # 0 = all rows
     config = load_experiment_config(config)
 
     X, y = loader()

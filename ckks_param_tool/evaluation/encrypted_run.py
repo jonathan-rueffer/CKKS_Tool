@@ -11,7 +11,8 @@ This file contains the shared measurement loop used by both evaluators.
 #     thread start-up) are not attributed to the first timed input
 #   - every input is timed timing_repeats times with a monotonic high-resolution clock
 #   - the error of an input is the maximum absolute error over its output slots
-def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing_repeats: int = 1):
+def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing_repeats: int = 1,
+                            raise_on_overflow: bool = True):
     inputs = [np.asarray(x) for x in inputs]
 
     for i in range(warmup_runs):
@@ -39,7 +40,7 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
     # an error at least as large as the outputs themselves leaves no correct bit: either the
     # result overflowed the modulus (e.g. intermediate products too large for the top modulus)
     # or the scale is too small for the noise. Either way the configuration is unusable.
-    if max_output > 0 and max(errors) >= max_output:
+    if raise_on_overflow and max_output > 0 and max(errors) >= max_output:
         raise OverflowError(
             f"no precision left (overflow or scale too small): error {max(errors):.3g} "
             f">= max |output| {max_output:.3g}"

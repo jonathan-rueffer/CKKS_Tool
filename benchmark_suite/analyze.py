@@ -139,6 +139,8 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
             "baseline_runtime": base["real_rows"]["runtime"],
             "baseline_max_relative_error": base["real_rows"].get("max_relative_error"),
             "baseline_prediction_agreement": base["real_rows"].get("prediction_agreement"),
+            "baseline_overflow_rate": base["real_rows"].get("overflow_rate"),
+            "real_rows": base["real_rows"].get("num_rows"),
         }
         if rec["found"]:
             row.update({
@@ -149,11 +151,38 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
                 "tool_runtime": rec["real_rows"]["runtime"],
                 "tool_max_relative_error": rec["real_rows"].get("max_relative_error"),
                 "tool_prediction_agreement": rec["real_rows"].get("prediction_agreement"),
+                "tool_overflow_rate": rec["real_rows"].get("overflow_rate"),
                 # measured on the same real rows
                 "speedup": safe_ratio(base["real_rows"]["runtime"], rec["real_rows"]["runtime"]),
                 "precision_gain_bits": rec["real_rows"]["precision_bits"] - base["real_rows"]["precision_bits"],
             })
         rows.append(row)
+    return rows
+
+
+def recommendations(name: str, run: Path) -> list[dict]:
+    info = _run_info(run / "tool")
+    with open(run / "tool" / "recommended_params.json") as f:
+        recs = json.load(f)
+    rows = []
+    for r in recs:
+        for label, point in [("knee", r)] + [(k, r[k]) for k in ("fastest", "most_precise", "fastest_meeting_target") if k in r]:
+            inf = point["inference"]
+            rows.append({
+                "dataset": name,
+                "task": info.get("model_task"),
+                "estimated_required_bits": info.get("estimated_required_bits"),
+                "target_security": r["target_security"],
+                "point": label,
+                "N": point["poly_degree"],
+                "chain": tuple(point["chain"]),
+                "precision_bits": inf["precision_bits"],
+                "runtime": inf["runtime"],
+                "prediction_agreement": inf.get("prediction_agreement"),
+                "max_relative_error": inf.get("max_relative_error"),
+                "overflow_rate": inf.get("overflow_rate"),
+                "real_rows": inf.get("num_rows"),
+            })
     return rows
 
 
@@ -221,7 +250,7 @@ def main(argv=None):
     out = args.results / "summary"
     out.mkdir(parents=True, exist_ok=True)
 
-    efficiency, vectors, baseline = [], [], []
+    efficiency, vectors, baseline, recs = [], [], [], []
     for dataset_dir in sorted(p for p in args.results.iterdir() if p.is_dir() and p.name != "summary"):
         run = latest_run(dataset_dir)
         if run is None:
@@ -232,10 +261,12 @@ def main(argv=None):
         efficiency += search_efficiency(name, run)
         vectors += test_vector_agreement(name, run)
         baseline += baseline_comparison(name, run)
+        recs += recommendations(name, run)
         plot_test_vectors(name, run, out)
         plot_fronts(name, run, out)
 
-    for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline")):
+    for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline"),
+                       (recs, "recommendations")):
         if rows:
             df = pd.DataFrame(rows)
             _write(df, out, stem)

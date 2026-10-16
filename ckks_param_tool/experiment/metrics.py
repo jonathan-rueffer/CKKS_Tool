@@ -27,7 +27,14 @@ class ExperimentResult:
     # candidates added because a candidate failed and was retried at a lower scale
     step_downs: int = 0
 
-    # precision estimates used to build the search space
+    # (target security level, label, params, real inference evaluation) for the front's endpoints
+    # ("fastest", "most_precise") and, if a precision target is set, "fastest_meeting_target"
+    front_points: list = field(default_factory=list)
+
+    # what the tool derived from the data descriptor and the model
     input_int_bits: int | None = None
-    decimal_bits: int | None = None
-    output_int_bits: int | None = None
+    resolution_bits: int | None = None # finest per-feature resolution of the data
+    estimated_required_bits: int | None = None # classifiers: precision that keeps predictions (info)
+    target_precision_bits: int | None = None # user-provided precision target, if any
+    decimal_bits: int | None = None # lower bound on the scale passed to the search space
+    output_int_bits: int | None = None # integer bits of the output, safety margin included

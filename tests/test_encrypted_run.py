@@ -60,3 +60,19 @@ def test_encrypted_multiclass_end_to_end():
     backend = TenSEALBackend(CKKSParams(8192, 2**40, (60, 40, 60)))
     errors, _, _ = run_encrypted_inference(backend, model, rng.normal(size=(3, 5)), warmup_runs=0)
     assert max(errors) < 1e-5
+
+
+def test_overflow_rate_is_per_row():
+    from ckks_param_tool.evaluation.tenseal_inference_evaluator import task_metrics
+
+    outputs = [(np.array([2.0 + 32.0]), np.array([2.0])),      # garbage row (error 32 > output 2)
+               (np.array([100.0 + 1e-9]), np.array([100.0])),  # fine
+               (np.array([1.0 + 1e-9]), np.array([1.0]))]      # fine
+    assert task_metrics("regression", outputs)["overflow_rate"] == 1 / 3
+
+
+def test_tiny_outputs_are_not_overflow():
+    from ckks_param_tool.evaluation.tenseal_inference_evaluator import task_metrics
+
+    outputs = [(np.array([1e-8 + 1e-6]), np.array([1e-8]))] # logit near 0, small error
+    assert task_metrics("binary", outputs)["overflow_rate"] == 0.0

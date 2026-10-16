@@ -38,6 +38,30 @@ def pareto_rows(
     mask = pareto_mask(df, metrics)
     return df[mask].copy()
 
+def _bits(df: pd.DataFrame) -> pd.Series:
+    return -np.log2(df["max_err"].astype(float).clip(lower=1e-300))
+
+
+# the fastest front point; points at most runtime_tol slower count as equally fast, and the most
+# precise of them is returned, so a noise-level speed difference never costs precision
+def fastest_point(front: pd.DataFrame, runtime_tol: float = 0.05) -> pd.Series:
+    fastest = float(front["runtime"].min())
+    near = front[front["runtime"] <= fastest * (1 + runtime_tol)]
+    return near.loc[near["max_err"].idxmin()]
+
+
+# the most precise front point
+def most_precise_point(front: pd.DataFrame) -> pd.Series:
+    return front.loc[front["max_err"].idxmin()]
+
+
+# the fastest front point whose precision (-log2 error) is at least required_bits (with the
+# same runtime tolerance), or None if no point is precise enough
+def fastest_meeting(front: pd.DataFrame, required_bits: float, runtime_tol: float = 0.05) -> pd.Series | None:
+    meeting = front[_bits(front) >= required_bits]
+    return fastest_point(meeting, runtime_tol) if len(meeting) else None
+
+
 # this function selects the "knee" point of the frontier to recommend, but this can be changed if
 # a given objective is deemed more important, such as error or runtime, through a 'policy' parameter.
 # The knee is the point closest (Euclidean distance) to the ideal point after normalizing runtime
@@ -58,10 +82,10 @@ def select_representative_pareto(
         return pareto_df.iloc[0]
 
     if policy == "fastest":
-        return pareto_df.loc[pareto_df["runtime"].idxmin()]
+        return fastest_point(pareto_df, runtime_tol)
 
     if policy == "most_accurate":
-        return pareto_df.loc[pareto_df["max_err"].idxmin()]
+        return most_precise_point(pareto_df)
 
     if policy != "knee":
         raise ValueError(f"Unknown recommendation policy '{policy}'")

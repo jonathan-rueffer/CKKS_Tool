@@ -3,7 +3,10 @@ from ckks_param_tool.params import SECURITY_LEVELS
 from ckks_param_tool.plotting import results_to_dataframe
 from .pareto import (
     pareto_mask,
-    select_representative_pareto
+    select_representative_pareto,
+    fastest_point,
+    most_precise_point,
+    fastest_meeting,
 )
 
 '''
@@ -11,10 +14,14 @@ This file contains the class that defines the searching and selection of paramet
 '''
 
 class CKKSParameterSelector(ParameterSelector):
-    def __init__(self, evaluator, search_space, recommendation_policy: str = "knee"):
+    # target_bits: an optional precision target; if set, the fastest configuration meeting it is
+    # reported for every security level as well
+    def __init__(self, evaluator, search_space, recommendation_policy: str = "knee",
+                 target_bits: float | None = None):
         self.evaluator = evaluator # how to evaluate a parameter set
         self.search_space = search_space # how to generate candidates
         self.recommendation_policy = recommendation_policy
+        self.target_bits = target_bits
         self.results = None
         self.step_downs = 0
 
@@ -50,8 +57,11 @@ class CKKSParameterSelector(ParameterSelector):
 
         df["is_pareto"] = False
         df["is_recommended"] = False
+        if self.target_bits is not None:
+            df["meets_target"] = (df["status"] == "success") & (df["precision_bits"] >= self.target_bits)
 
         recommended = []
+        front_points = [] # (security, label, params, result): the front's endpoints and target match
 
         for sec in SECURITY_LEVELS:
             df[f"pareto_{sec}"] = False
@@ -78,6 +88,13 @@ class CKKSParameterSelector(ParameterSelector):
             df.loc[rep.name, f"recommended_{sec}"] = True
             recommended.append((sec,) + self.results[rep.name])
 
+            points = {"fastest": fastest_point(pareto_df), "most_precise": most_precise_point(pareto_df)}
+            if self.target_bits is not None:
+                points["fastest_meeting_target"] = fastest_meeting(pareto_df, self.target_bits)
+            for label, row in points.items():
+                if row is not None:
+                    front_points.append((sec, label) + self.results[row.name])
+
         level_cols = [f"pareto_{sec}" for sec in SECURITY_LEVELS]
         df["is_pareto"] = df[level_cols].any(axis=1)
         df["is_recommended"] = df[[f"recommended_{sec}" for sec in SECURITY_LEVELS]].any(axis=1)
@@ -88,5 +105,6 @@ class CKKSParameterSelector(ParameterSelector):
             "pareto": [self.results[i] for i in pareto_indices],
             # list of (target security level, params, result)
             "recommended": recommended,
+            "front_points": front_points,
             "df": df
         }

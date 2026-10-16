@@ -16,8 +16,11 @@ class DataConfig:
     method: str = "truncated_normal" # test vector generation strategy
     rounding: Optional[int] = None # optional rounding of the generated test vectors
     random_state: Optional[int] = 42 # random state for reproducibility
-    max_decimal_bits: int = 40 # cap on the decimal precision estimated from the data
-    target_precision_bits: Optional[int] = None # if set, used instead of the data estimate
+    max_decimal_bits: int = 40 # cap on any precision estimated from the data
+    target_precision_bits: Optional[int] = None # optional precision target in bits (see README)
+    magnitude_samples: int = 10000 # plaintext-only samples used to bound outputs and margins
+    output_margin_bits: int = 3 # safety bits added to the estimated output magnitude (sizes q0)
+    margin_quantile: float = 0.01 # classifiers: estimated precision need keeps (1 - q) of predictions
 
     def to_dict(self):
         return asdict(self)
@@ -42,21 +45,34 @@ class DataConfig:
         if self.target_precision_bits is not None and self.target_precision_bits <= 0:
             raise ValueError("data.target_precision_bits must be > 0 or None")
 
+        if self.magnitude_samples < 0:
+            raise ValueError("data.magnitude_samples must be >= 0")
+
+        if self.output_margin_bits < 0:
+            raise ValueError("data.output_margin_bits must be >= 0")
+
+        if not 0.0 <= self.margin_quantile < 1.0:
+            raise ValueError("data.margin_quantile must be in [0, 1)")
+
 
 @dataclass(frozen=True)
 class EvaluationConfig:
-    num_samples: int = 100 # number of real dataset entries used to evaluate recommended parameters
+    num_samples: int = 100 # real dataset entries used to evaluate the recommendations (0 = all)
     warmup_runs: int = 1 # untimed encrypted inferences run before timing each candidate
     timing_repeats: int = 1 # timed passes over the test vectors per candidate
     n_threads: Optional[int] = None # TenSEAL worker threads (None = all cores)
     random_state: Optional[int] = 42 # random state for selecting the real dataset entries
+    # the recommended point per security level: "knee", "fastest" or "most_accurate"
+    recommendation: str = "knee"
 
     def to_dict(self):
         return asdict(self)
 
     def __post_init__(self):
-        if self.num_samples <= 0:
-            raise ValueError("evaluation.num_samples must be > 0")
+        if self.num_samples < 0:
+            raise ValueError("evaluation.num_samples must be >= 0 (0 = all rows)")
+        if self.recommendation not in ("knee", "fastest", "most_accurate"):
+            raise ValueError("evaluation.recommendation must be knee, fastest or most_accurate")
         if self.warmup_runs < 0:
             raise ValueError("evaluation.warmup_runs must be >= 0")
         if self.timing_repeats <= 0:

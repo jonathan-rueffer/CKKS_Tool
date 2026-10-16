@@ -1,21 +1,16 @@
 import numpy as np
 from scipy.stats import truncnorm
 from ckks_param_tool.config import DataConfig
+from .descriptor import DataDescriptor
 import math
 
 '''
-This file contains the functions central to the data processing stage: generating the
-representative test vectors, and analyzing the dataset and model to determine the estimated
-integer and decimal bits of precision.
+This file contains the functions central to the data processing stage. Everything is computed
+from a DataDescriptor (per-feature statistics), so the raw data is not needed:
+    - the representative test vectors (encrypted during the evaluation)
+    - many more plaintext-only samples plus stress vectors, used to bound the model's outputs
+      (which sizes q0) and its decision margins (the precision a classifier needs)
 '''
-
-def _compute_feature_descriptors(X):
-    return {
-        "mean": np.mean(X, axis=0),
-        "std": np.std(X, axis=0),
-        "min": np.min(X, axis=0),
-        "max": np.max(X, axis=0),
-    }
 
 def _sample_truncated_normal(descriptors, n_samples, rng):
     mean = descriptors["mean"]
@@ -81,105 +76,109 @@ _SAMPLERS = {
 TEST_VECTOR_POLICIES = ("representative", "random_rows", "naive")
 
 
+def _descriptor(source) -> DataDescriptor:
+    return source if isinstance(source, DataDescriptor) else DataDescriptor.from_data(source)
+
+
+# generates the test vectors used for encrypted evaluation. `source` is either the raw data or
+# a DataDescriptor; the random_rows policy (a validation baseline) needs the raw data.
 def generate_test_vectors(
-    X,
+    source,
     config: DataConfig,
     test_vector_policy: str = "representative",
 ):
 
     if test_vector_policy == "representative":
-        return generate_representative_test_vectors(X, config)
+        return generate_representative_test_vectors(source, config)
 
     if test_vector_policy == "random_rows":
-        return generate_random_row_test_vectors(X, config)
+        if isinstance(source, DataDescriptor):
+            raise ValueError("the random_rows policy needs the raw data, not a descriptor")
+        return generate_random_row_test_vectors(source, config)
 
     if test_vector_policy == "naive":
-        return generate_naive_test_vectors(X, config)
+        return generate_naive_test_vectors(source, config)
 
     raise ValueError(f"Unknown test vector method: {test_vector_policy}")
 
 
-# generates the representative test vectors
-def generate_representative_test_vectors(
-    X,
-    config: DataConfig
-):
-
-    method = config.method
-    num_samples = config.num_samples
-    rounding = config.rounding
-
+def _sample(descriptor: DataDescriptor, method: str, n: int, seed) -> np.ndarray:
     if method not in _SAMPLERS:
         raise ValueError(f"Unknown sampling method '{method}'")
+    rng = np.random.default_rng(seed)
+    return _SAMPLERS[method](descriptor.arrays(), n, rng)
 
-    rng = np.random.default_rng(config.random_state)
-    descriptors = _compute_feature_descriptors(X)
 
-    test_vectors = _SAMPLERS[method](descriptors, num_samples, rng)
+# generates the representative test vectors from the descriptor
+def generate_representative_test_vectors(
+    source,
+    config: DataConfig
+):
+    test_vectors = _sample(_descriptor(source), config.method, config.num_samples, config.random_state)
 
-    if rounding is not None:
-        test_vectors = np.round(test_vectors, rounding)
+    if config.rounding is not None:
+        test_vectors = np.round(test_vectors, config.rounding)
 
     return test_vectors
 
 
-# relative size below which a gap between two values is treated as floating-point noise
-_FLOAT_NOISE_REL = 2.0 ** -40
+# plaintext-only inputs used to bound the model's outputs and margins: many representative
+# samples (cheap, since they are never encrypted) plus the stress vectors of the descriptor
+def magnitude_inputs(source, config: DataConfig) -> np.ndarray:
+    descriptor = _descriptor(source)
+    seed = None if config.random_state is None else config.random_state + 1
+    samples = _sample(descriptor, config.method, config.magnitude_samples, seed)
+    return np.vstack([samples, descriptor.stress_vectors()])
 
 
-# estimates the precision bits from the dataset, which are used throughout the tool.
-#   integer bits : bits needed for the largest input magnitude
-#   decimal bits : bits needed to resolve the finest step between distinct values of any
-#                  single feature. Gaps are measured per feature (gaps between values of
-#                  different features carry no meaning), gaps at the level of floating-point
-#                  noise are ignored, and the result is capped at max_decimal_bits.
+# estimates the precision bits from the dataset: (input integer bits, finest per-feature
+# resolution in bits, capped). Kept for convenience; the descriptor computes both.
 def estimate_precision_bits(
     X,
     max_decimal_bits: int = 40,
     verbose: bool = False,
 ):
-    X = np.asarray(X, dtype=float)
-    if X.ndim == 1:
-        X = X.reshape(-1, 1)
-
-    # integer precision
-    max_abs = float(np.max(np.abs(X)))
-    int_bits = max(0, math.ceil(math.log2(max_abs))) if max_abs > 0 else 1
-
-    # decimal precision
-    dec_bits = 0
-    finest_gap = None
-    for col in X.T:
-        values = np.unique(col)
-        if len(values) < 2: # constant feature
-            continue
-        gaps = np.diff(values)
-        noise = _FLOAT_NOISE_REL * max(1.0, float(np.max(np.abs(values))))
-        gaps = gaps[gaps > noise]
-        if len(gaps) == 0:
-            continue
-        gap = float(np.min(gaps))
-        finest_gap = gap if finest_gap is None else min(finest_gap, gap)
-        dec_bits = max(dec_bits, math.ceil(-math.log2(gap) - 1e-9)) # tolerance for gaps like 0.4999...
-
-    dec_bits = min(max(dec_bits, 0), max_decimal_bits)
-
-    # for testing
+    descriptor = _descriptor(X)
+    int_bits, dec_bits = descriptor.input_int_bits(), descriptor.resolution_bits(max_decimal_bits)
     if verbose:
-        print("CKKS precision estimate:")
-        print(f"  Max |x|                : {max_abs}")
-        print(f"  Integer bits           : {int_bits}")
-        print(f"  Finest per-feature gap : {finest_gap if finest_gap is not None else 'N/A'}")
-        print(f"  Decimal bits           : {dec_bits}")
-
+        print(f"CKKS precision estimate: integer bits {int_bits}, decimal bits {dec_bits}")
     return int_bits, dec_bits
 
 
-# integer bits of the largest plaintext model output on the given inputs. The last prime q0
-# has to hold the output at scale Delta, so this (not the input magnitude) sizes q0.
-def estimate_output_int_bits(model, inputs) -> int:
-    max_abs = max(float(np.max(np.abs(np.atleast_1d(model(np.asarray(x)))))) for x in inputs)
-    return max(0, math.ceil(math.log2(max_abs))) if max_abs > 0 else 0
+def _outputs(model, inputs) -> list[np.ndarray]:
+    return [np.atleast_1d(np.asarray(model(np.asarray(x)), dtype=float)) for x in inputs]
+
+
+# integer bits of the largest plaintext model output on the given inputs, plus margin_bits of
+# safety. The last prime q0 has to hold the output at scale Delta, so this sizes q0.
+def estimate_output_int_bits(model, inputs, margin_bits: int = 0) -> int:
+    max_abs = max(float(np.max(np.abs(o))) for o in _outputs(model, inputs))
+    bits = max(0, math.ceil(math.log2(max_abs))) if max_abs > 0 else 0
+    return bits + margin_bits
+
+
+# the precision (bits) a classification model needs so that the predicted class does not change
+# on at least (1 - quantile) of the inputs. An absolute error e on every output flips
+#   binary     : the class if e >= |logit|
+#   multiclass : the argmax if 2e >= (largest - second largest logit)
+# so the tolerated error of an input is its margin (|logit|, or half the gap between the two
+# largest logits). Returns None for regression, which has no decision margin.
+def estimate_required_precision_bits(model, inputs, quantile: float = 0.01, max_bits: int = 40) -> int | None:
+    task = getattr(model, "task", "regression")
+    if task == "regression":
+        return None
+
+    outputs = np.array(_outputs(model, inputs))
+    if task == "binary":
+        margins = np.abs(outputs[:, 0])
+    else:
+        top = np.sort(outputs, axis=1)
+        margins = (top[:, -1] - top[:, -2]) / 2
+
+    margin = float(np.quantile(margins, quantile))
+    if margin <= 0:
+        return max_bits
+    return min(max(0, math.ceil(-math.log2(margin))), max_bits)
 
 
 '''
@@ -202,7 +201,7 @@ def generate_random_row_test_vectors(
 
     # Randomly select rows from dataset
     indices = rng.choice(len(X), size=num_samples, replace=False)
-    test_vectors = X[indices]
+    test_vectors = np.asarray(X)[indices]
 
     if rounding is not None:
         test_vectors = np.round(test_vectors, rounding)
@@ -212,8 +211,8 @@ def generate_random_row_test_vectors(
 
 # dataset-agnostic baseline: uniform values in [-1, 1] with the right number of features
 def generate_naive_test_vectors(
-    X,
+    source,
     config: DataConfig
 ):
     rng = np.random.default_rng(config.random_state)
-    return rng.uniform(-1.0, 1.0, size=(config.num_samples, np.asarray(X).shape[1]))
+    return rng.uniform(-1.0, 1.0, size=(config.num_samples, _descriptor(source).num_features))

@@ -1,5 +1,4 @@
 import matplotlib.pyplot as plt
-import numpy as np
 import pandas as pd
 import seaborn as sns
 from ckks_param_tool.config import PlottingConfig
@@ -10,9 +9,17 @@ and one for the combined plot.
 '''
 
 # the combined plot
+def _requirement_line(ax, required_bits):
+    if required_bits is not None:
+        ax.axvline(2.0 ** -required_bits, color="gray", linestyle="--", linewidth=1, zorder=0)
+        ax.annotate(f"needed: {required_bits} bits", (2.0 ** -required_bits, 1), xycoords=("data", "axes fraction"),
+                    xytext=(-4, -12), textcoords="offset points", ha="right", fontsize=9, color="gray")
+
+
 def plot_runtime_vs_precision_pareto(
     df: pd.DataFrame,
     config: PlottingConfig,
+    required_bits: int | None = None,
 ):
     df_plot = df.copy()
 
@@ -34,8 +41,6 @@ def plot_runtime_vs_precision_pareto(
         192: "#1B9E77",  
         256: "#2A6FDB",  
     }
-
-    legend_handles = []
 
     for sec, color in palette.items():
 
@@ -121,6 +126,7 @@ def plot_runtime_vs_precision_pareto(
     ax.set_xlabel("Maximum Absolute Error")
     ax.set_ylabel("Median Runtime (s)")
     ax.set_title("Runtime-Precision Tradeoff (All Security Levels)", pad=35)
+    _requirement_line(ax, required_bits)
 
     sns.despine()
 
@@ -148,7 +154,8 @@ def plot_runtime_vs_precision_pareto(
 
 # the individual security level plot
 # shows every configuration that is at least `sec`-bit secure, with the front for that target
-def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfig):
+def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfig,
+                               required_bits: int | None = None):
 
     subset = df[(df["status"] == "success") & (df["security"] >= sec)].copy()
 
@@ -213,6 +220,7 @@ def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfi
     ax.set_xlabel("Maximum Absolute Error")
     ax.set_ylabel("Median Runtime (s)")
     ax.set_title(f"Runtime-Precision Tradeoff (at least {int(sec)}-bit Security)", pad=35)
+    _requirement_line(ax, required_bits)
 
     sns.despine()
 

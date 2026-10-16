@@ -1,8 +1,11 @@
+from .descriptor import DataDescriptor
 from .generators import (
     generate_representative_test_vectors,
     generate_test_vectors,
+    magnitude_inputs,
     estimate_precision_bits,
-    estimate_output_int_bits
+    estimate_output_int_bits,
+    estimate_required_precision_bits,
 )
 
 from .loaders import (
@@ -20,6 +23,9 @@ from .splits import client_server_split
 
 
 __all__ = [
+    "DataDescriptor",
+    "magnitude_inputs",
+    "estimate_required_precision_bits",
     "generate_representative_test_vectors",
     "generate_test_vectors",
     "load_breast_cancer_data",
