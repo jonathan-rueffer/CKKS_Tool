@@ -1,28 +1,7 @@
-from .experiment import (
-    ExperimentConfig, 
-    DataConfig, 
-    EvaluationConfig, 
-    PlottingConfig, 
-    SearchPolicyConfig
-)
+from .experiment import ExperimentConfig
 
 '''
-This file contains the default configurations used when running the tool, can be overwritten 
-with a sperarate config file of the same format.
+This file contains the default configuration used when running the tool. Every field can be
+overwritten with a separate JSON config file of the same format (see loader.py).
 '''
-DEFAULT_EXPERIMENT_CONFIG = ExperimentConfig(
-    data=DataConfig(
-        num_samples=10,
-        method="gaussian",
-        rounding=None,
-        test_size=0.3,
-        random_state=42,
-    ),
-    evaluation=EvaluationConfig(
-        num_samples=10
-    ),
-    plotting=PlottingConfig(
-        error_tol=None
-    ),
-    search=SearchPolicyConfig()
-)
+DEFAULT_EXPERIMENT_CONFIG = ExperimentConfig()

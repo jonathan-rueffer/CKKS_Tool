@@ -1,68 +1,48 @@
-import time
 import numpy as np
 
 from .metrics import InferenceEvaluationResult
 from .inference_evaluator import InferenceEvaluator
+from .encrypted_run import run_encrypted_inference
 from ckks_param_tool.params import CKKSParams
 from ckks_param_tool.encryption import TenSEALBackend
 from ckks_param_tool.config import EvaluationConfig
 
 '''
-This file contains the TenSEAL inference evaluation class, which defines how a given 
-recommended parameter set will be evaluated.
+This file contains the TenSEAL inference evaluation class, which defines how a given
+recommended parameter set will be evaluated on real dataset entries.
 '''
 class TenSEALInferenceEvaluator(InferenceEvaluator):
 
-    def __init__(self, model, X, config: EvaluationConfig):
-        
+    def __init__(self, model, X, config: EvaluationConfig | None = None):
+
         self.backend = TenSEALBackend
         self.model = model
-        self.X = X
-        self.num_samples = config.num_samples
-        self.rng = np.random.default_rng(seed=42)
+        self.X = np.asarray(X)
+        self.config = config or EvaluationConfig()
+
+        # the same real entries are used for every parameter set so results are comparable
+        rng = np.random.default_rng(self.config.random_state)
+        size = min(self.config.num_samples, self.X.shape[0])
+        self.sample_idx = rng.choice(self.X.shape[0], size=size, replace=False)
 
     # Given a parameter set, returns an InferenceEvaluationResult object
     def evaluate(self, params: CKKSParams) -> InferenceEvaluationResult:
-        
+
         try:
-            # initializing the backend (TenSEAL)
-            backend = self.backend(params) 
+            backend = self.backend(params, n_threads=self.config.n_threads)
 
-            # indices of random dataset entries
-            idx = self.rng.choice(self.X.shape[0], size=self.num_samples, replace=False)
-
-            # selecting the random entries
-            X_sample = self.X[idx, :]
-
-            errors = []
-
-            runtimes = []
-            
-
-            for sample in X_sample:
-                
-                start = time.time()
-                # encrypted inference
-                enc_x = backend.encrypt(sample) # encrypt random entry
-                enc_y = self.model.forward_encrypted(enc_x) # homomorphic forward pass
-                dec_y = backend.decrypt(enc_y) # decrypt
-
-                # calculate runtime
-                end = time.time() - start
-
-                # baseline used for metrics, plaintext inference
-                plain_y = np.array(self.model(np.array(sample))) 
-                
-                # calculate error
-                err = float(np.mean(np.abs(dec_y - plain_y)))
-
-                errors.append(err)
-                runtimes.append(end) 
-
+            errors, runtimes = run_encrypted_inference(
+                backend,
+                self.model,
+                self.X[self.sample_idx, :],
+                warmup_runs=self.config.warmup_runs,
+                timing_repeats=self.config.timing_repeats,
+            )
 
             return InferenceEvaluationResult(
-                error=max(errors), # record maximum error accross dataset samples
-                runtime=np.mean(runtimes), # record average runtime across dataset samples
+                error=max(errors), # maximum error across dataset samples
+                runtime=float(np.median(runtimes)), # median runtime across dataset samples
+                runtime_std=float(np.std(runtimes)),
             )
 
         # handle case of encrypted inference fails
@@ -70,4 +50,6 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
             return InferenceEvaluationResult(
                 error=np.inf,
                 runtime=np.inf,
+                status="failure",
+                failure_reason=str(e),
             )

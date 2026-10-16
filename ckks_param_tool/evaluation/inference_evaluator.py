@@ -9,6 +9,6 @@ This file contains the abstract inference evaluation class.
 class InferenceEvaluator(ABC):
 
     @abstractmethod
-    def evaluate(self) -> InferenceEvaluationResult:
+    def evaluate(self, params: CKKSParams) -> InferenceEvaluationResult:
         pass
 

@@ -5,3 +5,12 @@ __pycache__/
 # Virtual environment
 venv/
 env/
+# Generated results (re-create with reproduce.py)
+results/
+
+# Tooling
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+.venv/

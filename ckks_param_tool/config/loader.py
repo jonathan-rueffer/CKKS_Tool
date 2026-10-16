@@ -1,42 +1,52 @@
 import json
+from pathlib import Path
+
 from .experiment import (
     ExperimentConfig,
     DataConfig,
     EvaluationConfig,
     PlottingConfig,
+    SearchPolicyConfig,
 )
 from .defaults import DEFAULT_EXPERIMENT_CONFIG
-from pathlib import Path
 
 '''
-This file contains the function that parses an input file location into a correct Config object.
+This file contains the function that turns a user config (None, a JSON path, a dict, or an
+ExperimentConfig) into an ExperimentConfig object. Missing sections and fields keep their
+default values.
 '''
+
+_SECTIONS = {
+    "data": DataConfig,
+    "evaluation": EvaluationConfig,
+    "plotting": PlottingConfig,
+    "search": SearchPolicyConfig,
+}
+
+
 def load_experiment_config(config=None) -> ExperimentConfig:
-    
+
     if config is None:
         return DEFAULT_EXPERIMENT_CONFIG
-    
+
+    if isinstance(config, ExperimentConfig):
+        return config
+
     if isinstance(config, (str, Path)):
-
         path = Path(config)
-
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {path}")
-
         with open(path) as f:
-            raw = json.load(f)
+            config = json.load(f)
 
-        required_sections = {"data", "evaluation", "plotting", "selection"}
-        missing = required_sections - raw.keys()
-        if missing:
-            raise KeyError(f"Missing config sections: {missing}")
+    if isinstance(config, dict):
+        unknown = set(config) - set(_SECTIONS)
+        if unknown:
+            raise KeyError(f"Unknown config sections: {sorted(unknown)}")
 
-        return ExperimentConfig(
-            data=DataConfig(**raw["data"]),
-            evaluation=EvaluationConfig(**raw["evaluation"]),
-            plotting=PlottingConfig(**raw["plotting"]),
-        )
+        return ExperimentConfig(**{
+            name: cls(**config.get(name, {}))
+            for name, cls in _SECTIONS.items()
+        })
 
-    raise TypeError(
-        "config must be None or a path."
-    )
+    raise TypeError("config must be None, a path, a dict or an ExperimentConfig.")

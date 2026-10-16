@@ -24,6 +24,8 @@ def plot_runtime_vs_precision_pareto(
     if "is_pareto" not in df_plot or "is_recommended" not in df_plot:
         raise ValueError("DataFrame must contain 'is_pareto' and 'is_recommended' columns")
 
+    df_plot = df_plot[df_plot["status"] == "success"]
+
     sns.set_theme(style="ticks")
     fig, ax = plt.subplots(figsize=(9, 7))
 
@@ -37,10 +39,8 @@ def plot_runtime_vs_precision_pareto(
 
     for sec, color in palette.items():
 
+        # candidates are coloured by the highest security level they reach
         subset = df_plot[df_plot["security"] == sec]
-
-        if subset.empty: # if there are no candidate points satisfying a specific security level
-            continue
 
         # plotting the candidate points
         candidates = subset[~subset["is_recommended"]]
@@ -54,8 +54,11 @@ def plot_runtime_vs_precision_pareto(
             zorder=1,
         )
 
+        # the front of a level contains every configuration at least that secure
+        level = df_plot[df_plot["security"] >= sec]
+
         # plotting the pareto points (excluding the recommended one)
-        pareto = subset[(subset["is_pareto"]) & (~subset["is_recommended"])]
+        pareto = level[(level[f"pareto_{sec}"]) & (~level[f"recommended_{sec}"])]
         ax.scatter(
             pareto["max_err"],
             pareto["runtime"],
@@ -67,7 +70,7 @@ def plot_runtime_vs_precision_pareto(
         )
 
         # plotting the recommended point
-        recommended = subset[subset["is_recommended"]]
+        recommended = level[level[f"recommended_{sec}"]]
         ax.scatter(
             recommended["max_err"],
             recommended["runtime"],
@@ -79,7 +82,7 @@ def plot_runtime_vs_precision_pareto(
             zorder=5,
         )
 
-    
+
     # proxy artist for candidate point visualization
     candidate_proxy = ax.scatter(
         [], [],            
@@ -116,7 +119,7 @@ def plot_runtime_vs_precision_pareto(
     ax.set_xscale("log")
     ax.minorticks_off()
     ax.set_xlabel("Maximum Absolute Error")
-    ax.set_ylabel("Average Runtime (s)")
+    ax.set_ylabel("Median Runtime (s)")
     ax.set_title("Runtime-Precision Tradeoff (All Security Levels)", pad=35)
 
     sns.despine()
@@ -144,9 +147,10 @@ def plot_runtime_vs_precision_pareto(
     return fig
 
 # the individual security level plot
+# shows every configuration that is at least `sec`-bit secure, with the front for that target
 def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfig):
 
-    subset = df[df["security"] == sec].copy()
+    subset = df[(df["status"] == "success") & (df["security"] >= sec)].copy()
 
     if subset.empty:
         return None
@@ -166,7 +170,7 @@ def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfi
     main_color = palette[sec]  # get the right color for the security level
 
     # plotting all points (except for recommended for no visual overlap issues)
-    all_points = subset[~subset["is_recommended"]]
+    all_points = subset[~subset[f"recommended_{sec}"]]
     ax.scatter(
         all_points["max_err"],
         all_points["runtime"],
@@ -179,7 +183,7 @@ def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfi
     )
 
     # plotting all Pareto-optimal candidate parameter sets
-    pareto = subset[(subset["is_pareto"]) & (~subset["is_recommended"])]
+    pareto = subset[(subset[f"pareto_{sec}"]) & (~subset[f"recommended_{sec}"])]
     ax.scatter(
         pareto["max_err"],
         pareto["runtime"],
@@ -192,7 +196,7 @@ def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfi
     )
 
     # plotting the recommended point
-    recommended = subset[subset["is_recommended"]]
+    recommended = subset[subset[f"recommended_{sec}"]]
     ax.scatter(
         recommended["max_err"],
         recommended["runtime"],
@@ -207,8 +211,8 @@ def plot_single_security_level(df: pd.DataFrame, sec: int, config: PlottingConfi
     ax.set_xscale("log")
     ax.minorticks_off()
     ax.set_xlabel("Maximum Absolute Error")
-    ax.set_ylabel("Average Runtime (s)")
-    ax.set_title(f"Runtime-Precision Tradeoff ({int(sec)}-bit Security)", pad=35)
+    ax.set_ylabel("Median Runtime (s)")
+    ax.set_title(f"Runtime-Precision Tradeoff (at least {int(sec)}-bit Security)", pad=35)
 
     sns.despine()
 

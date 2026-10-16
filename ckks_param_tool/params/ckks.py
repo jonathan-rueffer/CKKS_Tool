@@ -12,6 +12,15 @@ class CKKSParams:
     chain: tuple[int, ...]
 
     @property
+    def log_scale(self) -> int:
+        return self.scale.bit_length() - 1
+
+    # number of rescales the chain supports: every prime except q0 and the special prime
+    @property
+    def levels(self) -> int:
+        return len(self.chain) - 2
+
+    @property
     def chain_sum(self) -> int:
         return sum(self.chain)
     

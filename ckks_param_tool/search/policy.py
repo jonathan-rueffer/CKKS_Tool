@@ -1,110 +1,193 @@
 from __future__ import annotations
-from dataclasses import dataclass
+from dataclasses import dataclass, replace, fields
 import math
 
+from ckks_param_tool.params.security import ALLOWED_CHAIN_BITS, SECURITY_LEVELS, SECURITY_TABLES
+from ckks_param_tool.params.primes import MAX_PRIME_BITS
+
 '''
-This file contains the class that outlines the hardcoded rules that the search space generation
-stage follows.
+This file contains the class that outlines the rules that the search space generation stage
+follows.
+
+Chain structure (SEAL / TenSEAL convention):
+
+    (q0, q1, ..., qL, special)
+
+    - q1..qL : one prime per rescale. TenSEAL rescales after every multiplication, including
+               ciphertext-plaintext multiplications, so a model of multiplicative depth L needs
+               exactly L of these primes. They are set to the size of the scale so that the
+               scale stays stable after each rescale.
+    - q0     : the prime left after the last rescale. It must hold the output value at scale
+               Delta, so log2(q0) >= log2(Delta) + (integer bits of the output) + 1 (sign).
+               The bits of q0 above the scale are the "bits of precision before the decimal
+               point" in the SEAL CKKS example.
+    - special: the key-switching prime. SEAL recommends it to be at least as large as the
+               largest other prime. It is counted in the security budget but holds no data.
+
+A model of depth L therefore needs a chain of length L + 2. Additional "spare" levels are
+allowed but only add cost; they are kept as a configurable option for exploration.
+
+Scales. In the RNS representation every prime occupies one 64-bit word, so the cost of
+encrypted inference depends on N and on the number of primes, but hardly on their bit sizes:
+for a fixed N and chain length a larger scale gives more precision at the same runtime. The
+candidate scales are therefore
+    - a grid starting at the data-derived lower bound (the precision the data needs), and
+    - for every security level, the largest scale whose smallest valid chain still fits that
+      level's modulus budget at this N ("budget scales"); these are the most precise
+      configurations each security level admits.
+Budget scales are also tried with spare levels (budget_extra_levels, default one): before the
+first rescale a value carries scale Delta^2, so at the largest scales the top modulus can be
+too small for the intermediate products (e.g. large raw inputs times weights). A spare level
+adds that headroom.
 '''
 
-@dataclass
+
+@dataclass(frozen=True)
 class CKKSSearchPolicy:
 
-    # what modulus bit sizes can be included in the chain
-    allowed_chain_bits: dict[int, int]
+    # ring dimensions to consider (each is filtered by its 128-bit modulus budget)
+    poly_degrees: tuple[int, ...] = (8192, 16384, 32768)
 
-    # how many scale candidates to include
+    # how many grid scales to include (0 = every grid step up to the largest feasible scale)
     num_scale_options: int = 3
 
-    # step size between candidate scales
+    # step size (bits) between grid scales
     scale_step: int = 10
 
-    # base buffer added to decimal precision
+    # buffer (bits) added to the decimal precision estimate before rounding
     base_scale_buffer: int = 5
 
-    # extra buffer that grows with depth, not included due to testing results
-    depth_buffer_factor: int = 10
+    # if set, the grid starts at this scale instead of the data-derived lower bound
+    min_scale_bits: int | None = None
 
-    # added chain lengths to include
-    chain_length_offsets: tuple[int, int] = (2, 3)
+    # add, for every security level, the largest scale that fits its budget (see above)
+    budget_scales: bool = True
 
-    # what sizes to be added to first modulus q0
-    q0_deltas: tuple[int, int, int] = (0, 10, 20)
+    # spare levels additionally tried at the budget scales (on top of extra_levels)
+    budget_extra_levels: tuple[int, ...] = (1,)
 
-    # max size of the final modulus qL
-    max_qL: int = 60
+    # unused levels added on top of the model depth (0 = exactly depth + 2 primes)
+    extra_levels: tuple[int, ...] = (0,)
 
-    # helper function to round a number to the nearest 10
-    def _round_to_10(self, n: int) -> int:
+    # bits added to the minimum admissible q0
+    q0_deltas: tuple[int, ...] = (0, 10, 20)
+
+    # max size of the special prime
+    max_qL: int = MAX_PRIME_BITS
+
+    def __post_init__(self):
+        unknown = [n for n in self.poly_degrees if n not in ALLOWED_CHAIN_BITS]
+        if unknown:
+            raise ValueError(f"unsupported poly_degrees {unknown}, choose from {sorted(ALLOWED_CHAIN_BITS)}")
+        if self.num_scale_options < 0:
+            raise ValueError("num_scale_options must be >= 0")
+        if self.min_scale_bits is not None and not 2 <= self.min_scale_bits <= MAX_PRIME_BITS:
+            raise ValueError(f"min_scale_bits must be in [2, {MAX_PRIME_BITS}]")
+        if self.scale_step <= 0:
+            raise ValueError("scale_step must be > 0")
+        if any(e < 0 for e in self.extra_levels) or any(e < 0 for e in self.budget_extra_levels):
+            raise ValueError("extra_levels and budget_extra_levels must be >= 0")
+        if any(d < 0 for d in self.q0_deltas):
+            raise ValueError("q0_deltas must be >= 0")
+        if not 2 <= self.max_qL <= MAX_PRIME_BITS:
+            raise ValueError(f"max_qL must be in [2, {MAX_PRIME_BITS}]")
+
+    # helper function to round a number up to the nearest 10
+    @staticmethod
+    def _round_to_10(n: int) -> int:
         return math.ceil(n / 10.0) * 10
 
-    # defines a buffer to add to the scale based on depth, not used
-    def buffer_from_depth(self, depth: int) -> int:
-        if depth <= 1:
-            return self.depth_buffer_factor
-        return self.depth_buffer_factor * depth
+    # smallest q0 (in bits) that can hold the output at the given scale
+    @staticmethod
+    def min_q0_bits(scale_bits: int, output_int_bits: int) -> int:
+        return scale_bits + output_int_bits + 1
 
-    # returns the polynomial degrees that can support the required depth of the model
-    def valid_degrees(self, depth: int) -> list[int]:
-        degrees = []
+    # q0 as generated by the policy before the q0_deltas are added
+    def base_q0(self, scale_bits: int, output_int_bits: int) -> int:
+        return self._round_to_10(self.min_q0_bits(scale_bits, output_int_bits))
 
-        if depth <= 7:
-            degrees.append(8192)
+    # largest scale for which q0 still fits in one prime
+    def max_scale_bits(self, output_int_bits: int) -> int:
+        return MAX_PRIME_BITS - output_int_bits - 1
 
-        if depth <= 14:
-            degrees.append(16384)
+    # the data-derived lower bound on the scale (or min_scale_bits if set)
+    def lower_scale_bits(self, bits_decimal: int) -> int:
+        if self.min_scale_bits is not None:
+            return self.min_scale_bits
+        return self._round_to_10(bits_decimal + self.base_scale_buffer)
 
-        if depth <= 29:
-            degrees.append(32768)
+    # the largest scale (multiple of 5, >= lower) whose smallest chain fits the budget
+    def _budget_scale(self, budget: int, levels: int, lower: int, output_int_bits: int) -> int | None:
+        top = self.max_scale_bits(output_int_bits)
+        for s in range(top - top % 5, lower - 1, -5):
+            q0 = self.base_q0(s, output_int_bits)
+            if q0 + levels * s + max(q0, s) <= budget:
+                return s
+        return None
 
-        return degrees
+    # maps every candidate scale (in bits) for one ring dimension to the spare levels it is
+    # tried with: grid scales use extra_levels, budget scales additionally budget_extra_levels
+    def scale_plan(
+        self,
+        bits_decimal: int,
+        poly_degree: int,
+        depth: int,
+        output_int_bits: int,
+    ) -> dict[int, set[int]]:
+        lower = self.lower_scale_bits(bits_decimal)
+        top = self.max_scale_bits(output_int_bits)
+        base_extras = set(self.extra_levels)
 
-    # generates the candidate scale sizes based on the decimal precision infered from the dataset
-    def candidate_scales(self, bits_decimal: int, depth: int) -> list[int]:
+        plan: dict[int, set[int]] = {}
+        i = 0
+        while lower + i * self.scale_step <= top and (self.num_scale_options == 0 or i < self.num_scale_options):
+            plan.setdefault(lower + i * self.scale_step, set()).update(base_extras)
+            i += 1
 
-        buffer_bits = self.base_scale_buffer #+ self.buffer_from_depth(depth) 
+        if self.budget_scales:
+            for sec in SECURITY_LEVELS:
+                for extra in base_extras | set(self.budget_extra_levels):
+                    s = self._budget_scale(SECURITY_TABLES[sec][poly_degree], depth + extra, lower, output_int_bits)
+                    if s is not None:
+                        plan.setdefault(s, set()).update(base_extras | {extra})
 
-        base = self._round_to_10(bits_decimal + buffer_bits)
+        return plan
 
-        return [
-            base + i * self.scale_step
-            for i in range(self.num_scale_options)
-        ]
-    
+    # the candidate scale sizes (in bits) for one ring dimension
+    def candidate_scales(
+        self,
+        bits_decimal: int,
+        poly_degree: int,
+        depth: int,
+        output_int_bits: int,
+    ) -> list[int]:
+        return sorted(self.scale_plan(bits_decimal, poly_degree, depth, output_int_bits))
+
     # generates candidate chains according to the policy constraints
     def generate_chains(
         self,
         poly_degree: int,
         scale_bits: int,
         depth: int,
-        bits_integer: int,
-        bits_decimal: int,
+        output_int_bits: int,
+        extra_levels: set[int] | None = None,
     ) -> list[tuple[int, ...]]:
 
-        max_bits = self.allowed_chain_bits[poly_degree]
+        budget = ALLOWED_CHAIN_BITS[poly_degree]
+        extra_levels = self.extra_levels if extra_levels is None else extra_levels
+        base_q0 = self.base_q0(scale_bits, output_int_bits)
 
-        base_q0 = self._round_to_10(bits_integer + bits_decimal)
+        q0_candidates = sorted({base_q0 + d for d in self.q0_deltas if base_q0 + d <= MAX_PRIME_BITS})
 
-        # constructing candidate q0
-        q0_candidates = []
-        for delta in self.q0_deltas:
-            q0 = max(base_q0 + delta, scale_bits + delta)
-            if q0 not in q0_candidates:
-                q0_candidates.append(q0)
-
-        # constructing candidate Q for each q0
         chains = []
-        for extra in self.chain_length_offsets:
-            chain_length = max(3, depth + extra)
-
-            internal = (scale_bits,) * (chain_length - 2)
+        for extra in sorted(set(extra_levels)):
+            internal = (scale_bits,) * (depth + extra)
 
             for q0 in q0_candidates:
-                for qL in range(q0, self.max_qL + 1, 10):
-
-                    chain = (q0,) + internal + (qL,)
-
-                    if sum(chain) <= max_bits:
+                # the special prime should be at least as large as every other prime
+                for special in range(max(q0, scale_bits), self.max_qL + 1, 10):
+                    chain = (q0,) + internal + (special,)
+                    if sum(chain) <= budget:
                         chains.append(chain)
 
         return chains
@@ -112,105 +195,60 @@ class CKKSSearchPolicy:
     # produces the default search policy
     @classmethod
     def default(cls) -> "CKKSSearchPolicy":
-        return cls(
-            allowed_chain_bits={
-                8192: 218,
-                16384: 438,
-                32768: 881,
-            }
-        )
-    
-    # produces a smaller candidate size for quick experimentation
+        return cls()
+
+    # produces a smaller candidate set for quick experimentation
     @classmethod
     def fast(cls) -> "CKKSSearchPolicy":
         return cls(
-            allowed_chain_bits={
-                8192: 218,
-                16384: 438,
-            },
-            num_scale_options=1,             
-            chain_length_offsets=(2,),       
-            q0_deltas=(0,),                  
-            max_qL=50                        
+            poly_degrees=(8192, 16384),
+            num_scale_options=1,
+            extra_levels=(0,),
+            q0_deltas=(0,),
         )
 
     # produces a more expansive parameter space policy
     @classmethod
     def full(cls) -> "CKKSSearchPolicy":
         return cls(
-            allowed_chain_bits={
-                8192: 218,
-                16384: 438,
-                32768: 881,
-            },
-            num_scale_options=4,             
-            chain_length_offsets=(2, 3, 4),  
-            q0_deltas=(0, 10, 20, 30),       
-            max_qL=60
+            num_scale_options=4,
+            extra_levels=(0, 1),
+            q0_deltas=(0, 10, 20, 30),
         )
 
-    # produces an even more broad parameter space polciy, used to compare tool vs near-exhaustive
+    # produces a near-exhaustive policy, used to compare the tool against a broad search. Its
+    # scales do not depend on the data: every multiple of 5 bits from 2^20 up to the largest
+    # feasible scale. Every candidate of `default` is also a candidate of `fuller` (see tests).
     @classmethod
     def fuller(cls) -> "CKKSSearchPolicy":
         return cls(
-            allowed_chain_bits={
-                8192: 218,
-                16384: 438,
-                32768: 881,
-            },
-
-            num_scale_options=8,          
+            num_scale_options=0,
             scale_step=5,
-
-            chain_length_offsets=(1, 2, 3, 4, 5, 6),
-
+            min_scale_bits=20,
+            budget_scales=False,
+            extra_levels=(0, 1, 2, 3, 4),
             q0_deltas=(0, 10, 20, 30, 40, 50),
-
-            max_qL=60,
-
-            base_scale_buffer=0
         )
 
+    PROFILES = ("default", "fast", "full", "fuller", "custom")
+
+    # builds a policy from a SearchPolicyConfig: the named profile is the starting point and
+    # every field set in the config (not None) overrides it
     @classmethod
-    def from_config(
-        cls,
-        config
-    ):
-
+    def from_config(cls, config) -> "CKKSSearchPolicy":
         presets = {
-
             "default": cls.default,
-
+            "custom": cls.default,
             "fast": cls.fast,
-
             "full": cls.full,
-
             "fuller": cls.fuller,
         }
+        policy = presets[config.profile]()
 
-        if config.profile != "custom":
+        overrides = {}
+        for f in fields(cls):
+            value = getattr(config, f.name, None)
+            if value is not None:
+                overrides[f.name] = tuple(value) if isinstance(value, list) else value
 
-            policy = presets[
-                config.profile
-            ]()
-
-        else:
-
-            policy = cls.default()
-
-        return cls(
-
-            allowed_chain_bits=policy.allowed_chain_bits,
-
-            num_scale_options=config.num_scale_options,
-
-            scale_step=config.scale_step,
-
-            base_scale_buffer=config.base_scale_buffer,
-
-            chain_length_offsets=config.chain_length_offsets,
-
-            q0_deltas=config.q0_deltas,
-
-            max_qL=config.max_qL,
-        )
+        return replace(policy, **overrides)

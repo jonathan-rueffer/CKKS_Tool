@@ -4,8 +4,9 @@ from ckks_param_tool.config import DataConfig
 import math
 
 '''
-This file contains two functions central to the data processing stage: generating the representative
-test vectors, and analyzing the dataset to determine the estimated integer and decimal bits of precision
+This file contains the functions central to the data processing stage: generating the
+representative test vectors, and analyzing the dataset and model to determine the estimated
+integer and decimal bits of precision.
 '''
 
 def _compute_feature_descriptors(X):
@@ -18,21 +19,23 @@ def _compute_feature_descriptors(X):
 
 def _sample_truncated_normal(descriptors, n_samples, rng):
     mean = descriptors["mean"]
-    std = descriptors["std"]
     std = np.clip(descriptors["std"], 1e-8, None)
     min_val = descriptors["min"]
     max_val = descriptors["max"]
 
-    a = (min_val - mean) / std
-    b = (max_val - mean) / std
-
-    samples = truncnorm.rvs(
-        a, b,
-        loc=mean,
-        scale=std,
-        size=(n_samples, len(mean)),
-        random_state=rng
-    )
+    # constant features (min == max) have an empty truncation interval: use the constant
+    samples = np.tile(np.asarray(mean, dtype=float), (n_samples, 1))
+    varying = max_val > min_val
+    if np.any(varying):
+        a = (min_val[varying] - mean[varying]) / std[varying]
+        b = (max_val[varying] - mean[varying]) / std[varying]
+        samples[:, varying] = truncnorm.rvs(
+            a, b,
+            loc=mean[varying],
+            scale=std[varying],
+            size=(n_samples, int(np.sum(varying))),
+            random_state=rng
+        )
 
     return samples
 
@@ -53,9 +56,8 @@ def _sample_uniform(descriptors, n_samples, rng):
 
 def _sample_student_t(descriptors, n_samples, rng, df=3):
     mean = descriptors["mean"]
-    std = descriptors["std"]
     std = np.clip(descriptors["std"], 1e-8, None)
-    
+
     n_features = len(mean)
 
     scale = std * np.sqrt((df - 2) / df)
@@ -76,11 +78,13 @@ _SAMPLERS = {
     "student_t": _sample_student_t
 }
 
+TEST_VECTOR_POLICIES = ("representative", "random_rows", "naive")
+
 
 def generate_test_vectors(
     X,
     config: DataConfig,
-    test_vector_policy
+    test_vector_policy: str = "representative",
 ):
 
     if test_vector_policy == "representative":
@@ -88,6 +92,9 @@ def generate_test_vectors(
 
     if test_vector_policy == "random_rows":
         return generate_random_row_test_vectors(X, config)
+
+    if test_vector_policy == "naive":
+        return generate_naive_test_vectors(X, config)
 
     raise ValueError(f"Unknown test vector method: {test_vector_policy}")
 
@@ -101,7 +108,7 @@ def generate_representative_test_vectors(
     method = config.method
     num_samples = config.num_samples
     rounding = config.rounding
-    
+
     if method not in _SAMPLERS:
         raise ValueError(f"Unknown sampling method '{method}'")
 
@@ -115,72 +122,80 @@ def generate_representative_test_vectors(
 
     return test_vectors
 
-# estimates the precision bits from the dataset, which are used throughout the tool   
+
+# relative size below which a gap between two values is treated as floating-point noise
+_FLOAT_NOISE_REL = 2.0 ** -40
+
+
+# estimates the precision bits from the dataset, which are used throughout the tool.
+#   integer bits : bits needed for the largest input magnitude
+#   decimal bits : bits needed to resolve the finest step between distinct values of any
+#                  single feature. Gaps are measured per feature (gaps between values of
+#                  different features carry no meaning), gaps at the level of floating-point
+#                  noise are ignored, and the result is capped at max_decimal_bits.
 def estimate_precision_bits(
     X,
-    integer_buffer_bits: int = 5,
+    max_decimal_bits: int = 40,
     verbose: bool = False,
 ):
-    X = np.asarray(X)
+    X = np.asarray(X, dtype=float)
+    if X.ndim == 1:
+        X = X.reshape(-1, 1)
 
     # integer precision
-    max_abs = np.max(np.abs(X))
-    if max_abs == 0:
-        int_bits = 1
-    else:
-        int_bits = max(0, math.ceil(math.log2(max_abs))) # + integer_buffer_bits
-    
+    max_abs = float(np.max(np.abs(X)))
+    int_bits = max(0, math.ceil(math.log2(max_abs))) if max_abs > 0 else 1
 
     # decimal precision
-    flat = np.sort(np.unique(X.flatten()))
-    diffs = np.diff(flat)
+    dec_bits = 0
+    finest_gap = None
+    for col in X.T:
+        values = np.unique(col)
+        if len(values) < 2: # constant feature
+            continue
+        gaps = np.diff(values)
+        noise = _FLOAT_NOISE_REL * max(1.0, float(np.max(np.abs(values))))
+        gaps = gaps[gaps > noise]
+        if len(gaps) == 0:
+            continue
+        gap = float(np.min(gaps))
+        finest_gap = gap if finest_gap is None else min(finest_gap, gap)
+        dec_bits = max(dec_bits, math.ceil(-math.log2(gap) - 1e-9)) # tolerance for gaps like 0.4999...
 
-    nonzero_diffs = diffs[diffs > 0]
-
-
-    if len(nonzero_diffs) == 0: # accounts for all values the same
-        dec_bits = 0
-    else:
-        delta_min = np.min(nonzero_diffs)
-        dec_bits = math.ceil(-math.log2(delta_min))
+    dec_bits = min(max(dec_bits, 0), max_decimal_bits)
 
     # for testing
     if verbose:
         print("CKKS precision estimate:")
         print(f"  Max |x|                : {max_abs}")
-        print(f"  Integer bits (with buf): {int_bits}")
-        print(f"  Min nonzero gap        : {nonzero_diffs.min() if len(nonzero_diffs) else 'N/A'}")
-        print(f"  Decimal bits    : {dec_bits}")
+        print(f"  Integer bits           : {int_bits}")
+        print(f"  Finest per-feature gap : {finest_gap if finest_gap is not None else 'N/A'}")
+        print(f"  Decimal bits           : {dec_bits}")
 
     return int_bits, dec_bits
 
 
-# testing function that takes random dataset entries rather than representative test vectors:
+# integer bits of the largest plaintext model output on the given inputs. The last prime q0
+# has to hold the output at scale Delta, so this (not the input magnitude) sizes q0.
+def estimate_output_int_bits(model, inputs) -> int:
+    max_abs = max(float(np.max(np.abs(np.atleast_1d(model(np.asarray(x)))))) for x in inputs)
+    return max(0, math.ceil(math.log2(max_abs))) if max_abs > 0 else 0
 
+
+'''
+Test vector policies used to validate the representative test vectors (not used by the tool
+itself).
+'''
+
+# takes random dataset entries rather than representative test vectors
 def generate_random_row_test_vectors(
     X,
     config: DataConfig
 ):
-    """
-    Generate random test vectors sampled directly from the dataset.
-
-    Parameters
-    ----------
-    X : np.ndarray
-        Client-side feature matrix.
-    config : DataConfig
-        Configuration containing num_samples and optional rounding.
-
-    Returns
-    -------
-    np.ndarray
-        Shape (num_samples, num_features)
-    """
-
     num_samples = config.num_samples
     rounding = config.rounding
 
-    rng = np.random.default_rng(42)
+    rng = np.random.default_rng(config.random_state)
 
     if num_samples > len(X):
         raise ValueError("num_samples cannot exceed dataset size when sampling without replacement")
@@ -193,3 +208,12 @@ def generate_random_row_test_vectors(
         test_vectors = np.round(test_vectors, rounding)
 
     return test_vectors
+
+
+# dataset-agnostic baseline: uniform values in [-1, 1] with the right number of features
+def generate_naive_test_vectors(
+    X,
+    config: DataConfig
+):
+    rng = np.random.default_rng(config.random_state)
+    return rng.uniform(-1.0, 1.0, size=(config.num_samples, np.asarray(X).shape[1]))

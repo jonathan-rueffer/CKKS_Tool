@@ -1,17 +1,21 @@
+import json
+import logging
+import time
+from datetime import datetime
+from pathlib import Path
+
+import matplotlib.pyplot as plt
+import pandas as pd
+
 #Config
-from ckks_param_tool.config import (
-    load_experiment_config,
-    ExperimentConfig
-)
+from ckks_param_tool.config import load_experiment_config
 
-#Test vectors:
-from ckks_param_tool.data import (
-    generate_representative_test_vectors,
-    generate_test_vectors
+#Test vectors and bit estimation:
+from ckks_param_tool.data.generators import (
+    generate_test_vectors,
+    estimate_precision_bits,
+    estimate_output_int_bits,
 )
-
-#Bit Estimation:
-from ckks_param_tool.data.generators import estimate_precision_bits
 
 #Evaluation:
 from ckks_param_tool.evaluation import (
@@ -32,21 +36,17 @@ from ckks_param_tool.plotting import (
     plot_runtime_vs_precision_pareto,
     plot_single_security_level
 )
-import matplotlib.pyplot as plt
 
 #Return object:
 from .metrics import ExperimentResult
-
-#Saving:
-from pathlib import Path
-from datetime import datetime
-import json
-
-from ckks_param_tool.search.pareto import pareto_mask
+from .environment import environment_info
 
 '''
 This file contains the class that represents the core tool logic.
 '''
+
+logger = logging.getLogger(__name__)
+
 
 class Experiment:
 
@@ -54,51 +54,43 @@ class Experiment:
     def __init__(self, dataset, model, config=None, test_vector_policy="representative"):
         self.dataset = dataset # the client dataset
         self.model = model # the model
-        self.config = load_experiment_config(config) # optional config file
-        self.results = None 
-        self.pareto_df = None 
+        self.config = load_experiment_config(config) # optional config (path, dict or object)
+        self.results: ExperimentResult | None = None
+        self.pareto_df = None
         self.test_vector_policy = test_vector_policy
-
-    # helper function for byte conversion for printing
-    def _format_bytes(self, n: int) -> str:
-        for unit in ["B", "KB", "MB", "GB"]:
-            if n < 1024:
-                return f"{n:.2f} {unit}"
-            n /= 1024
-        return f"{n:.2f} TB"
 
     # helper function for simple printing the tool results (if the rich library is not installed)
     def _print_summary(self):
-        pareto = self.results.best_params
-
         print("\n=== Experiment Summary ===")
-        print(f"Pareto-optimal configurations: {len(pareto)}\n")
+        print(f"Evaluated candidates : {len(self.results.param_search_results)}")
+        print(f"Search time          : {self.results.search_seconds:.1f}s\n")
 
-        by_runtime = sorted(pareto, key=lambda x: x[1].runtime)
-        by_error = sorted(pareto, key=lambda x: x[1].error)
-
-        def print_entry(title, params, inf):
-            print(f"--- {title} ---")
+        for sec, params, inf in self.results.recommended_params:
+            print(f"--- Recommended for >= {sec}-bit security ---")
             print(f"Poly degree     : {params.poly_degree}")
-            print(f"Scale           : {params.scale}")
+            print(f"Scale           : 2^{params.log_scale}")
             print(f"Chain           : {params.chain}")
             print(f"Security (bits) : {params.security_score}")
-            print(f"Total memory    : {self._format_bytes(params.memory['total'])}")
-            print(f"Inference error : {inf.error:.4e}")
-            print(f"Inference time  : {inf.runtime:.3f}s\n")
+            print(f"Inference error : {inf.error:.4e} ({inf.precision_bits:.1f} bits)")
+            print(f"Inference time  : {inf.runtime:.4f}s\n")
 
-        print_entry("Fastest Pareto Point", *by_runtime[0])
-        print_entry("Most Accurate Pareto Point", *by_error[0])
-    
     def _save_config(self, run_dir: Path):
         with open(run_dir / "config.json", "w") as f:
             json.dump(self.config.to_dict(), f, indent=2)
 
     def _save_param_search(self, run_dir: Path):
-        df = results_to_dataframe(
-            self.results.param_search_results
-        )
-        df.to_csv(run_dir / "param_search.csv", index=False)
+        self.results_dataframe().to_csv(run_dir / "param_search.csv", index=False)
+
+        infeasible = pd.DataFrame([
+            {
+                "poly_degree": p.poly_degree,
+                "scale": p.scale,
+                "chain": p.chain,
+                "reason": reason,
+            }
+            for p, reason in self.results.infeasible
+        ], columns=["poly_degree", "scale", "chain", "reason"])
+        infeasible.to_csv(run_dir / "infeasible.csv", index=False)
 
     def _save_plots(self, run_dir: Path):
         plots_dir = run_dir / "plots"
@@ -106,51 +98,82 @@ class Experiment:
         self.plot(output_dir=plots_dir, show=False)
 
     def _save_recommended_params(self, run_dir: Path):
-        pareto_summary = []
+        summary = []
 
-        for params, inference in self.results.recommended_params:
-            pareto_summary.append({
+        for sec, params, inference in self.results.recommended_params:
+            summary.append({
+                "target_security": sec,
                 "security": params.security_score,
                 "poly_degree": params.poly_degree,
                 "scale": params.scale,
+                "log_scale": params.log_scale,
                 "chain": list(params.chain),
                 "memory": params.memory,
-                "inference": {
-                    "error": inference.error,
-                    "runtime": inference.runtime
-                }
+                "inference": inference.to_dict(),
             })
 
         with open(run_dir / "recommended_params.json", "w") as f:
-            json.dump(pareto_summary, f, indent=2)
+            json.dump(summary, f, indent=2)
+
+    def _save_run_info(self, run_dir: Path):
+        r = self.results
+        info = {
+            "test_vector_policy": self.test_vector_policy,
+            "model_depth": self.model.multiplicative_depth,
+            "input_int_bits": r.input_int_bits,
+            "decimal_bits": r.decimal_bits,
+            "output_int_bits": r.output_int_bits,
+            "num_candidates": len(r.param_search_results),
+            "num_successful": sum(res.status == "success" for _, res in r.param_search_results),
+            "num_infeasible": len(r.infeasible),
+            "search_seconds": r.search_seconds,
+            "environment": environment_info(self.config.evaluation.n_threads),
+        }
+        with open(run_dir / "run_info.json", "w") as f:
+            json.dump(info, f, indent=2)
 
     # function that runs the tool on the user provided dataset and model input
     def run(self, verbose: bool = False) -> ExperimentResult:
 
         # generate the test vectors from the dataset
         test_vectors = generate_test_vectors(
-            self.dataset, 
+            self.dataset,
             self.config.data,
-            test_vector_policy = self.test_vector_policy
-        )
-
-        # initialze the evaluator
-        evaluator = TenSEALParameterEvaluator(
-            model=self.model,
-            test_vectors=test_vectors
+            test_vector_policy=self.test_vector_policy
         )
 
         # determine the estimated bits of precision from the dataset
-        bits_int, bits_dec = estimate_precision_bits(self.dataset)
+        bits_int, bits_dec = estimate_precision_bits(
+            self.dataset,
+            max_decimal_bits=self.config.data.max_decimal_bits,
+        )
+        if self.config.data.target_precision_bits is not None:
+            bits_dec = self.config.data.target_precision_bits
+
+        # the last prime has to hold the model output, so size it from the plaintext outputs
+        # of the test vectors
+        output_int_bits = estimate_output_int_bits(self.model, test_vectors)
+
+        logger.info(
+            "precision estimate: input int bits=%d, decimal bits=%d, output int bits=%d",
+            bits_int, bits_dec, output_int_bits,
+        )
 
         # define search policy from config
         policy = CKKSSearchPolicy.from_config(self.config.search)
 
         search_space = CKKSParameterSearchSpace(
-            self.model.multiplicative_depth,
-            bits_int,
-            bits_dec,
+            depth=self.model.multiplicative_depth,
+            bits_decimal=bits_dec,
+            output_int_bits=output_int_bits,
             policy=policy
+        )
+
+        # initialze the evaluator
+        evaluator = TenSEALParameterEvaluator(
+            model=self.model,
+            test_vectors=test_vectors,
+            config=self.config.evaluation,
         )
 
         # intialize the selector
@@ -160,35 +183,48 @@ class Experiment:
         )
 
         # generate the search space and evaluate it
+        start = time.perf_counter()
         param_search_results = selector.select()
+        search_seconds = time.perf_counter() - start
+
+        logger.info(
+            "evaluated %d candidates in %.1fs (%d infeasible skipped)",
+            len(param_search_results), search_seconds, len(search_space.infeasible),
+        )
+
+        if not any(r.status == "success" for _, r in param_search_results):
+            logger.warning(
+                "no candidate succeeded (%d evaluated, %d infeasible). Try a broader search "
+                "profile or set data.target_precision_bits to raise the candidate scales.",
+                len(param_search_results), len(search_space.infeasible),
+            )
 
         # apply pareto logic
         selection = selector.get_pareto_optimal_params()
         df_pareto = selection["df"]
         self.pareto_df = df_pareto[df_pareto["status"] == "success"]
-        pareto_params = selection["pareto"]
 
-        # get recommended parameters
-        recommended_params = selection["recommended"]
-
-        # initialize inference evaluator to evaluate recommended parameters
+        # initialize inference evaluator to evaluate recommended parameters on real entries
         inference_evaluator = TenSEALInferenceEvaluator(
             model=self.model,
             X=self.dataset,
             config=self.config.evaluation
         )
-        recommended_pareto_inference_results = []
 
-        # real inference evaluation of recommended parameters
-        for params,_ in recommended_params:
-            inference_result = inference_evaluator.evaluate(params)
-            recommended_pareto_inference_results.append((params, inference_result))
+        recommended = []
+        for sec, params, _ in selection["recommended"]:
+            recommended.append((sec, params, inference_evaluator.evaluate(params)))
 
         # store all results
         self.results = ExperimentResult(
             param_search_results=param_search_results,
-            pareto_params=pareto_params,
-            recommended_params=recommended_pareto_inference_results
+            pareto_params=selection["pareto"],
+            recommended_params=recommended,
+            infeasible=list(search_space.infeasible),
+            search_seconds=search_seconds,
+            input_int_bits=bits_int,
+            decimal_bits=bits_dec,
+            output_int_bits=output_int_bits,
         )
 
         # optional printing of results to terminal, otherwise only in saved folder
@@ -201,27 +237,38 @@ class Experiment:
 
         return self.results
 
+    # all evaluated candidates with the per-level Pareto and recommendation flags
+    def results_dataframe(self) -> pd.DataFrame:
+        if self.results is None:
+            raise RuntimeError("Experiment not run.")
+        if self.pareto_df is not None:
+            df = results_to_dataframe(self.results.param_search_results)
+            flags = [c for c in self.pareto_df.columns if c not in df.columns]
+            return df.join(self.pareto_df[flags]).fillna({c: False for c in flags})
+        return results_to_dataframe(self.results.param_search_results)
+
     # function that plots the results
     def plot(self, output_dir=None, show=False):
         if self.results is None:
             raise RuntimeError("Experiment not run.")
 
-        df = results_to_dataframe(self.results.param_search_results)
-        df = df[df["status"] == "success"].copy()
-
         figs = {}
 
-        # combined Pareto plot
-        if self.pareto_df is not None:
-            figs["runtime_vs_precision_pareto"] = plot_runtime_vs_precision_pareto(
-                self.pareto_df, 
-                self.config.plotting
-            )
+        if self.pareto_df is None or self.pareto_df.empty:
+            logger.warning("no successful candidates, nothing to plot")
+            return figs
 
-        # individual security level plots
-        df_for_sec = self.pareto_df if self.pareto_df is not None else df
-        for sec in sorted(df_for_sec["security"].unique()):
-            fig = plot_single_security_level(df_for_sec, sec, self.config.plotting)
+        # combined Pareto plot
+        figs["runtime_vs_precision_pareto"] = plot_runtime_vs_precision_pareto(
+            self.pareto_df,
+            self.config.plotting
+        )
+
+        # individual security level plots (each shows configurations at least that secure)
+        for sec in sorted(self.pareto_df["security"].unique()):
+            if sec <= 0:
+                continue
+            fig = plot_single_security_level(self.pareto_df, int(sec), self.config.plotting)
             if fig is not None:
                 figs[f"runtime_vs_precision_{int(sec)}bit"] = fig
 
@@ -240,32 +287,36 @@ class Experiment:
 
         return figs
 
-    # function that saves the results to a dedicated folder, must be called by user
-    def save(self, output_dir: str | Path):
+    # function that saves the results to a dedicated folder, must be called by user. By default
+    # a time-stamped subfolder of output_dir is created; with timestamped=False the results are
+    # written to output_dir itself (which must not exist yet)
+    def save(self, output_dir: str | Path, timestamped: bool = True):
 
         if self.results is None:
             raise RuntimeError("Cannot save before running experiment.")
 
-        output_dir = Path(output_dir) 
+        output_dir = Path(output_dir)
 
         # time stamp for files
-        run_id = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        run_dir = output_dir / run_id
+        if timestamped:
+            run_dir = output_dir / datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        else:
+            run_dir = output_dir
         run_dir.mkdir(parents=True, exist_ok=False)
 
         # save the JSON configuration file used to run the tool
         self._save_config(run_dir)
 
-        # save the evaluation parameter space into a CSV
+        # save the evaluated parameter space (and the skipped infeasible chains) into CSVs
         self._save_param_search(run_dir)
 
-        # save the plots as PNGs in a spereate subfolder
+        # save the plots as PNGs in a seperate subfolder
         self._save_plots(run_dir)
 
         # save JSON of recommended parameters and their evaluation
         self._save_recommended_params(run_dir)
 
-        return run_dir
+        # save the precision estimates, search cost and software/hardware environment
+        self._save_run_info(run_dir)
 
-    
-    
+        return run_dir

@@ -1,9 +1,13 @@
+import logging
+
 import numpy as np
 import torch
 import torch.nn as nn
 import torch.optim as optim
 
 from .wrapper import WrappedModel
+
+logger = logging.getLogger(__name__)
 
 class SquareNet(nn.Module):
 
@@ -71,14 +75,11 @@ def build_wrapped_mnist_model(model):
 
         return logits
     
-    class PlainModel:
-
-        def __call__(self, x):
-            return plain_forward(x)
-
+    # TenSEAL rescales after every multiplication, including ciphertext-plaintext ones, so the
+    # depth counts levels consumed: 3 matmuls + 2 squares = 5
     return WrappedModel(
         plain_forward,
-        depth=4,
+        depth=5,
         encrypted_forward_fn=encrypted_forward_fn
     )
 
@@ -118,9 +119,6 @@ def train_mnist_model(X, y):
 
         optimizer.step()
 
-        print(
-            f"Epoch {epoch+1}/{epochs} "
-            f"Loss={loss.item():.4f}"
-        )
+        logger.info("epoch %d/%d loss=%.4f", epoch + 1, epochs, loss.item())
 
     return build_wrapped_mnist_model(model)

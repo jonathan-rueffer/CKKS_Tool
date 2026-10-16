@@ -1,7 +1,8 @@
 from .generators import (
     generate_representative_test_vectors,
     generate_test_vectors,
-    estimate_precision_bits
+    estimate_precision_bits,
+    estimate_output_int_bits
 )
 
 from .loaders import (
@@ -31,5 +32,6 @@ __all__ = [
     "load_ionosphere_data",
     "client_server_split",
     "estimate_precision_bits",
+    "estimate_output_int_bits",
     "load_mnist_data"
 ]

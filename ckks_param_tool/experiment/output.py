@@ -36,12 +36,10 @@ def memory_table(mem: dict[str, int]) -> Table:
 # function that prints the recommended params and their metrics
 def print_experiment_summary(results):
 
-    pareto_list = results.recommended_params 
-
-    for i, (params, inference) in enumerate(pareto_list, start=1):
+    for sec, params, inference in results.recommended_params:
 
          # the parameters themselves
-        table = Table(title=f"Recommended Parameter {i}", show_header=True, header_style="bold cyan")
+        table = Table(title=f"Recommended for >= {sec}-bit security", show_header=True, header_style="bold cyan")
         table.add_column("Parameter", style="dim")
         table.add_column("Value", style="bold")
 
@@ -57,7 +55,8 @@ def print_experiment_summary(results):
         metrics.add_column(style="bold")
 
         metrics.add_row("Inference error", f"{inference.error:.4e}")
-        metrics.add_row("Runtime (s)", f"{inference.runtime:.3f}")
+        metrics.add_row("Precision (bits)", f"{inference.precision_bits:.1f}")
+        metrics.add_row("Median runtime (s)", f"{inference.runtime:.4f}")
 
         mem = params.memory
 
