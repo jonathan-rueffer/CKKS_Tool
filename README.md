@@ -23,10 +23,14 @@ Chains follow the SEAL / TenSEAL structure `(q0, q1, …, qL, special)`:
 | Component | Rule |
 |---|---|
 | `q1 … qL` | one prime per rescale, sized like the scale `Δ`. TenSEAL rescales after **every** multiplication (ciphertext-plaintext included), so a model of depth `L` needs exactly `L` of them. |
-| `q0` | holds the output after the last rescale: `log2 q0 ≥ log2 Δ + ⌈log2 max|f(x)|⌉ + 1`, with `max|f(x)|` taken from the plaintext model on the test vectors. |
-| special prime | key-switching prime, at least as large as every other prime. |
-| scale `Δ` | a grid starting at the data-derived lower bound (finest per-feature resolution plus a buffer, or `data.target_precision_bits`), plus, for each security level, the largest scale whose smallest valid chain fits that level's budget at this `N`. Every prime takes one 64-bit word, so runtime depends on `N` and the number of primes but hardly on the scale: a larger scale gives more precision at the same cost. Budget scales are also tried with one spare level, which gives intermediate products (scale Δ² before the first rescale) headroom when inputs are large. |
+| `q0` | holds the output after the last rescale: `log2 q0 ≥ log2 Δ + ⌈log2 max|f(x)|⌉ + 1` (rounded up to a multiple of 10), with `max|f(x)|` taken from the plaintext model on the test vectors. Only this minimum is used: extra bits in `q0` add headroom, not precision. |
+| special prime | key-switching prime, at least as large as every other prime. Two sizes are tried: the smallest valid one (cheapest in the security budget) and 60 bits (least key-switching noise). |
+| scale `Δ` | the data-derived lower bound (finest per-feature resolution plus a buffer, or `data.target_precision_bits`), plus, for each security level, the largest scale whose smallest valid chain fits that level's budget at this `N` (the *budget scales*). Budget scales are also tried with one spare level. |
 | `N` | every supported ring dimension whose 128-bit budget fits the chain. |
+
+**Why only these scales.** Every prime takes one 64-bit word in the RNS representation, so runtime depends on `N` and the number of primes but hardly on the scale: for a given `N` and chain length a larger scale gives more precision at the same cost. Each `(N, chain length)` therefore has one Pareto-optimal configuration, the largest scale that works, and that is what the budget scales target. The lower bound guarantees a candidate that meets the data's precision.
+
+**Step-down.** Before the first rescale a value carries scale `Δ²`, so at large scales the top modulus can be too small for intermediate products (for example, large raw inputs times weights). If a candidate fails or returns a result whose error is at least as large as the output itself, the same structure (`N`, number of levels, `q0` rule, special prime rule) is retried 5 bits lower, until one works or the lower bound is reached. Every attempt is kept in `param_search.csv`.
 
 Chains that SEAL cannot build (a prime size outside 2–60 bits, or not enough primes `≡ 1 mod 2N` of a given size) are recorded in `infeasible.csv` and not evaluated.
 
@@ -111,7 +115,7 @@ From the command line, for a built-in workload:
 ckks-param-tool run --dataset diabetes --profile default --output results
 ```
 
-Each saved run contains `config.json`, `param_search.csv` (every evaluated candidate), `infeasible.csv`, `recommended_params.json`, `run_info.json` (precision estimates, search time, software and hardware environment) and `plots/`.
+Each saved run contains `config.json`, `param_search.csv` (every evaluated candidate, step-downs included), `infeasible.csv`, `recommended_params.json`, `run_info.json` (precision estimates, search time, number of step-downs, git commit, software and hardware environment) and `plots/`.
 
 ### Configuration
 
@@ -126,11 +130,13 @@ Each saved run contains `config.json`, `param_search.csv` (every evaluated candi
 | | `warmup_runs` | 1 | untimed inferences before timing a candidate |
 | | `timing_repeats` | 1 | timed passes over the inputs |
 | | `n_threads` | `None` | TenSEAL threads (`None` = all cores) |
-| `search` | `profile` | `default` | `fast`, `default`, `full`, `fuller` (near-exhaustive) or `custom` |
-| | `poly_degrees`, `num_scale_options` (0 = no limit), `scale_step`, `base_scale_buffer`, `min_scale_bits`, `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL` | from profile | override single fields of the profile |
+| `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (grid of 4 scales, `q0` offsets, every special prime size, one spare level), `fuller` (near-exhaustive) or `custom` |
+| | `poly_degrees`, `num_scale_options` (grid scales above the lower bound; 1 = only the lower bound, 0 = no limit), `scale_step`, `base_scale_buffer`, `min_scale_bits`, `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
 | `plotting` | `error_tol` | `None` | hide candidates above this error in plots |
 
-Runtime is the median wall-clock time of one encrypted inference (encrypt, evaluate, decrypt); key generation is excluded. Error is the worst-case absolute difference to the plaintext model; precision is `-log2(error)`.
+Runtime is the median wall-clock time of one encrypted inference (encrypt, evaluate, decrypt); key generation is excluded. Error is the worst-case absolute difference to the plaintext model; precision is `-log2(error)`. A candidate whose error is at least the largest output magnitude is reported as a failure ("no precision left").
+
+The knee recommendation is only a starting point: the tool's output is the trade-off itself, i.e. the evaluated candidates and the Pareto front for each security level.
 
 ## Reproducing the benchmarks
 
@@ -142,6 +148,8 @@ python reproduce.py --no-fuller            # skip the near-exhaustive comparison
 
 For every workload this runs the tool, the near-exhaustive `fuller` search (every scale from 2^20 to the largest feasible one in 5-bit steps, independent of the data, up to 4 spare levels and 6 sizes of q0), the tool's candidates with random dataset rows and with dataset-agnostic vectors, and the tutorial-default baseline (`N=8192`, `[60, 40, 40, 60]`, `Δ=2^40`). `results/summary/` then contains:
 
-- `search_efficiency` — candidate and search-time reduction, Pareto recall, ε-recall and normalized hypervolume ratio per security level. The tool's front is computed from the `fuller` run's measurements of the tool's own candidates (every tool candidate is also a `fuller` candidate), so the comparison is not affected by run-to-run timing noise.
+- `search_efficiency` — candidate and search-time reduction, Pareto recall, ε-recall and normalized hypervolume ratio per security level. The tool's front is computed from the `fuller` run's measurements of the tool's own candidates (every tool candidate is also a `fuller` candidate), so the comparison is not affected by run-to-run timing noise. Recall counts the reference-front parameter sets the tool also contains; ε-recall counts a reference point as found if the tool has one at most 5% slower and at most 0.1 decades less accurate. Hypervolume is computed on (runtime, log10 error), normalized by the reference front, with the runtime axis spanning at least 5% of the fastest runtime so that noise-level differences on flat fronts are not amplified.
 - `test_vectors` — Spearman correlation, Pearson correlation and R² on log error, and coverage (how often the estimate is at least the real error) for representative and naive vectors against random rows.
-- `baseline` — the tool's recommendations versus the tutorial defaults on the same real rows.
+- `baseline` — the tutorial defaults against every configuration the tool evaluated: the fastest one at least as precise, and the most precise one at least as fast. The baseline is measured with the same test vectors, and both sides are re-measured on the same real rows.
+
+On flat fronts (all candidates with the same `N` and chain length) runtime differences are mostly measurement noise, so repeated timing (`evaluation.timing_repeats`) makes the search-efficiency numbers more stable.
