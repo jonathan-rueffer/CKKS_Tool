@@ -24,6 +24,9 @@ class ExperimentResult:
     # wall-clock time of the candidate evaluation stage (s)
     search_seconds: float = float("nan")
 
+    # candidates added because a candidate failed and was retried at a lower scale
+    step_downs: int = 0
+
     # precision estimates used to build the search space
     input_int_bits: int | None = None
     decimal_bits: int | None = None

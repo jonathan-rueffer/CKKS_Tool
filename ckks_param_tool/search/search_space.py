@@ -1,4 +1,4 @@
-from ckks_param_tool.params import CKKSParams, chain_infeasibility_reason
+from ckks_param_tool.params import CKKSParams, ALLOWED_CHAIN_BITS, chain_infeasibility_reason
 from .policy import CKKSSearchPolicy
 
 '''
@@ -52,3 +52,33 @@ class CKKSParameterSearchSpace:
                         params.append(candidate)
 
         return params
+
+    # the same structure (N, number of levels, q0 offset, special prime rule) at the next lower
+    # scale that SEAL can build, or None once the data-derived lower bound is passed. Used when
+    # a candidate fails or overflows: the intermediate values were too large for its modulus.
+    def step_down(self, params: CKKSParams) -> CKKSParams | None:
+        step = self.policy.step_down_bits
+        if step <= 0:
+            return None
+
+        out = self.output_int_bits
+        lower = max(self.policy.lower_scale_bits(self.bits_decimal), 2)
+        old_scale = params.log_scale
+        q0_offset = params.chain[0] - self.policy.base_q0(old_scale, out)
+        special_is_min = params.chain[-1] == max(params.chain[0], old_scale)
+
+        scale = old_scale - step
+        while scale >= lower:
+            q0 = self.policy.base_q0(scale, out) + q0_offset
+            special = max(q0, scale) if special_is_min else max(params.chain[-1], q0)
+            chain = (q0,) + (scale,) * params.levels + (special,)
+            candidate = CKKSParams(poly_degree=params.poly_degree, scale=2**scale, chain=chain)
+
+            if sum(chain) <= ALLOWED_CHAIN_BITS[params.poly_degree]:
+                reason = chain_infeasibility_reason(params.poly_degree, chain)
+                if not reason:
+                    return candidate
+                self.infeasible.append((candidate, reason))
+            scale -= step
+
+        return None

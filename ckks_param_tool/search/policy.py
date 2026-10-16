@@ -22,23 +22,29 @@ Chain structure (SEAL / TenSEAL convention):
                The bits of q0 above the scale are the "bits of precision before the decimal
                point" in the SEAL CKKS example.
     - special: the key-switching prime. SEAL recommends it to be at least as large as the
-               largest other prime. It is counted in the security budget but holds no data.
+               largest other prime. It is counted in the security budget but holds no data. A
+               larger special prime lowers key-switching noise, so by default two sizes are
+               tried: the smallest valid one (max(q0, scale), cheapest in budget) and the
+               largest (max_qL, least noise).
 
 A model of depth L therefore needs a chain of length L + 2. Additional "spare" levels are
 allowed but only add cost; they are kept as a configurable option for exploration.
 
-Scales. In the RNS representation every prime occupies one 64-bit word, so the cost of
-encrypted inference depends on N and on the number of primes, but hardly on their bit sizes:
-for a fixed N and chain length a larger scale gives more precision at the same runtime. The
-candidate scales are therefore
-    - a grid starting at the data-derived lower bound (the precision the data needs), and
+Scales. In the RNS representation every prime occupies one 64-bit word (Cheon et al., SAC
+2018), so the cost of encrypted inference depends on N and on the number of primes, but hardly
+on their bit sizes: for a fixed N and chain length a larger scale gives more precision at the
+same runtime. The candidate scales are therefore
+    - the data-derived lower bound (the precision the data needs; optionally a grid above it),
     - for every security level, the largest scale whose smallest valid chain still fits that
       level's modulus budget at this N ("budget scales"); these are the most precise
       configurations each security level admits.
+q0 beyond its minimum only adds headroom, not precision, so by default only the minimum is used.
 Budget scales are also tried with spare levels (budget_extra_levels, default one): before the
 first rescale a value carries scale Delta^2, so at the largest scales the top modulus can be
 too small for the intermediate products (e.g. large raw inputs times weights). A spare level
-adds that headroom.
+adds that headroom. In addition, a candidate whose evaluation fails or overflows is retried with
+the same structure step_down_bits lower (see CKKSParameterSearchSpace.step_down), so the search
+finds the largest scale that works for the workload.
 '''
 
 
@@ -48,8 +54,9 @@ class CKKSSearchPolicy:
     # ring dimensions to consider (each is filtered by its 128-bit modulus budget)
     poly_degrees: tuple[int, ...] = (8192, 16384, 32768)
 
-    # how many grid scales to include (0 = every grid step up to the largest feasible scale)
-    num_scale_options: int = 3
+    # how many grid scales to include, starting at the lower bound (1 = only the lower bound,
+    # 0 = every grid step up to the largest feasible scale)
+    num_scale_options: int = 1
 
     # step size (bits) between grid scales
     scale_step: int = 10
@@ -70,10 +77,16 @@ class CKKSSearchPolicy:
     extra_levels: tuple[int, ...] = (0,)
 
     # bits added to the minimum admissible q0
-    q0_deltas: tuple[int, ...] = (0, 10, 20)
+    q0_deltas: tuple[int, ...] = (0,)
 
     # max size of the special prime
     max_qL: int = MAX_PRIME_BITS
+
+    # special prime sizes: "min_max" = {smallest valid, max_qL}; "all" = every 10 bits in between
+    special_primes: str = "min_max"
+
+    # when a candidate fails or overflows, retry it this many bits lower (0 = off)
+    step_down_bits: int = 5
 
     def __post_init__(self):
         unknown = [n for n in self.poly_degrees if n not in ALLOWED_CHAIN_BITS]
@@ -91,6 +104,10 @@ class CKKSSearchPolicy:
             raise ValueError("q0_deltas must be >= 0")
         if not 2 <= self.max_qL <= MAX_PRIME_BITS:
             raise ValueError(f"max_qL must be in [2, {MAX_PRIME_BITS}]")
+        if self.special_primes not in ("min_max", "all"):
+            raise ValueError("special_primes must be 'min_max' or 'all'")
+        if self.step_down_bits < 0:
+            raise ValueError("step_down_bits must be >= 0")
 
     # helper function to round a number up to the nearest 10
     @staticmethod
@@ -163,6 +180,15 @@ class CKKSSearchPolicy:
     ) -> list[int]:
         return sorted(self.scale_plan(bits_decimal, poly_degree, depth, output_int_bits))
 
+    # the special prime should be at least as large as every other prime
+    def special_prime_sizes(self, q0: int, scale_bits: int) -> list[int]:
+        smallest = max(q0, scale_bits)
+        if smallest > self.max_qL:
+            return []
+        if self.special_primes == "min_max":
+            return sorted({smallest, self.max_qL})
+        return list(range(smallest, self.max_qL + 1, 10))
+
     # generates candidate chains according to the policy constraints
     def generate_chains(
         self,
@@ -184,8 +210,7 @@ class CKKSSearchPolicy:
             internal = (scale_bits,) * (depth + extra)
 
             for q0 in q0_candidates:
-                # the special prime should be at least as large as every other prime
-                for special in range(max(q0, scale_bits), self.max_qL + 1, 10):
+                for special in self.special_prime_sizes(q0, scale_bits):
                     chain = (q0,) + internal + (special,)
                     if sum(chain) <= budget:
                         chains.append(chain)
@@ -202,9 +227,7 @@ class CKKSSearchPolicy:
     def fast(cls) -> "CKKSSearchPolicy":
         return cls(
             poly_degrees=(8192, 16384),
-            num_scale_options=1,
-            extra_levels=(0,),
-            q0_deltas=(0,),
+            budget_extra_levels=(),
         )
 
     # produces a more expansive parameter space policy
@@ -214,6 +237,7 @@ class CKKSSearchPolicy:
             num_scale_options=4,
             extra_levels=(0, 1),
             q0_deltas=(0, 10, 20, 30),
+            special_primes="all",
         )
 
     # produces a near-exhaustive policy, used to compare the tool against a broad search. Its
@@ -228,6 +252,8 @@ class CKKSSearchPolicy:
             budget_scales=False,
             extra_levels=(0, 1, 2, 3, 4),
             q0_deltas=(0, 10, 20, 30, 40, 50),
+            special_primes="all",
+            step_down_bits=0, # every scale is already evaluated
         )
 
     PROFILES = ("default", "fast", "full", "fuller", "custom")

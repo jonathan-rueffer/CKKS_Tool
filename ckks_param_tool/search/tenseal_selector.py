@@ -16,14 +16,27 @@ class CKKSParameterSelector(ParameterSelector):
         self.search_space = search_space # how to generate candidates
         self.recommendation_policy = recommendation_policy
         self.results = None
+        self.step_downs = 0
 
-    # this function generates the candidate parameters and evaluates them
+    # this function generates the candidate parameters and evaluates them. A candidate that fails
+    # (e.g. overflow) is retried with the same structure at a lower scale until one works; every
+    # attempt is kept in the results.
     def select(self):
         results = []
-        for params in self.search_space.generate():
+        seen = set()
+        self.step_downs = 0
 
-            result = self.evaluator.evaluate(params)
-            results.append((params, result))
+        for params in self.search_space.generate():
+            while params is not None and params not in seen:
+                seen.add(params)
+                result = self.evaluator.evaluate(params)
+                results.append((params, result))
+
+                if result.status == "success":
+                    break
+                params = self.search_space.step_down(params)
+                if params is not None and params not in seen:
+                    self.step_downs += 1
 
         self.results = sorted(results, key=lambda x: x[1].error) # sort by error for the output
 

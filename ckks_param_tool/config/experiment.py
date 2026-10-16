@@ -94,6 +94,8 @@ class SearchPolicyConfig:
     extra_levels: Optional[tuple[int, ...]] = None
     q0_deltas: Optional[tuple[int, ...]] = None
     max_qL: Optional[int] = None
+    special_primes: Optional[str] = None
+    step_down_bits: Optional[int] = None
 
     def to_dict(self):
         return asdict(self)

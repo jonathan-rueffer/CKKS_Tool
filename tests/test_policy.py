@@ -105,3 +105,54 @@ def test_budget_scales_get_a_spare_level():
     assert spare, "budget scales should also be tried with one spare level"
     grid = set(CKKSSearchPolicy.default().scale_plan(20, 8192, 1, 3))
     assert all(p.log_scale in grid for p in spare)
+
+
+def test_special_prime_min_max():
+    policy = CKKSSearchPolicy.default()
+    assert policy.special_prime_sizes(q0=50, scale_bits=45) == [50, 60]
+    assert policy.special_prime_sizes(q0=60, scale_bits=55) == [60]
+    assert CKKSSearchPolicy.fuller().special_prime_sizes(q0=40, scale_bits=35) == [40, 50, 60]
+
+
+def test_default_uses_minimal_q0_only():
+    policy = CKKSSearchPolicy.default()
+    for chain in policy.generate_chains(8192, 40, 1, output_int_bits=3):
+        assert chain[0] == policy.base_q0(40, 3)
+
+
+def test_step_down_keeps_structure():
+    space = CKKSParameterSearchSpace(1, bits_decimal=20, output_int_bits=3)
+    space.generate()
+    from ckks_param_tool.params import CKKSParams
+    p = CKKSParams(8192, 2**55, (60, 55, 60))
+    lower = space.step_down(p)
+    assert lower.log_scale == 50 and lower.chain == (60, 50, 60) and lower.levels == 1
+    p2 = CKKSParams(16384, 2**55, (60, 55, 55, 60))
+    assert space.step_down(p2).chain == (60, 50, 50, 60)
+
+
+def test_step_down_stops_at_lower_bound():
+    space = CKKSParameterSearchSpace(1, bits_decimal=40, output_int_bits=3) # lower bound 50
+    space.generate()
+    from ckks_param_tool.params import CKKSParams
+    assert space.step_down(CKKSParams(8192, 2**50, (60, 50, 60))) is None
+
+
+def test_selector_steps_down_after_failure():
+    from ckks_param_tool.evaluation import ParameterEvaluationResult
+    from ckks_param_tool.search import CKKSParameterSelector
+
+    class Evaluator:
+        # pretend every scale above 2^50 overflows
+        def evaluate(self, p):
+            ok = p.log_scale <= 50
+            return ParameterEvaluationResult(error=1e-9 if ok else float("inf"), runtime=1.0,
+                                             security_bits=p.security_score,
+                                             status="success" if ok else "failure")
+
+    space = CKKSParameterSearchSpace(1, bits_decimal=20, output_int_bits=3)
+    selector = CKKSParameterSelector(Evaluator(), space)
+    results = selector.select()
+    evaluated = {p.chain for p, _ in results}
+    assert (60, 55, 60) in evaluated and (60, 50, 60) in evaluated
+    assert selector.step_downs > 0

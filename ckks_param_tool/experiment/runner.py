@@ -126,6 +126,7 @@ class Experiment:
             "num_candidates": len(r.param_search_results),
             "num_successful": sum(res.status == "success" for _, res in r.param_search_results),
             "num_infeasible": len(r.infeasible),
+            "num_step_downs": r.step_downs,
             "search_seconds": r.search_seconds,
             "environment": environment_info(self.config.evaluation.n_threads),
         }
@@ -188,8 +189,9 @@ class Experiment:
         search_seconds = time.perf_counter() - start
 
         logger.info(
-            "evaluated %d candidates in %.1fs (%d infeasible skipped)",
+            "evaluated %d candidates in %.1fs (%d infeasible skipped, %d step-downs)",
             len(param_search_results), search_seconds, len(search_space.infeasible),
+            selector.step_downs,
         )
 
         if not any(r.status == "success" for _, r in param_search_results):
@@ -222,6 +224,7 @@ class Experiment:
             recommended_params=recommended,
             infeasible=list(search_space.infeasible),
             search_seconds=search_seconds,
+            step_downs=selector.step_downs,
             input_int_bits=bits_int,
             decimal_bits=bits_dec,
             output_int_bits=output_int_bits,

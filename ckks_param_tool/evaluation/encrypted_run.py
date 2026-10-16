@@ -33,11 +33,13 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
             errors.append(float(np.max(np.abs(dec_y - plain_y))))
             max_output = max(max_output, float(np.max(np.abs(plain_y))))
 
-    # an error at least as large as the outputs themselves means the result overflowed the
-    # modulus (e.g. intermediate products too large for the top modulus) and is meaningless
+    # an error at least as large as the outputs themselves leaves no correct bit: either the
+    # result overflowed the modulus (e.g. intermediate products too large for the top modulus)
+    # or the scale is too small for the noise. Either way the configuration is unusable.
     if max_output > 0 and max(errors) >= max_output:
         raise OverflowError(
-            f"result overflowed: error {max(errors):.3g} >= max |output| {max_output:.3g}"
+            f"no precision left (overflow or scale too small): error {max(errors):.3g} "
+            f">= max |output| {max_output:.3g}"
         )
 
     return errors, runtimes
