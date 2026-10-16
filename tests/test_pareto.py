@@ -24,3 +24,9 @@ def test_knee_treats_runtimes_within_tolerance_as_equal():
     df = pd.DataFrame({"runtime": [3.284, 3.303], "max_err": [2**-22.9, 2**-33.4]})
     assert select_representative_pareto(df).name == 1
     assert select_representative_pareto(df, runtime_tol=0.0).name == 0
+
+
+def test_two_point_tie_goes_to_faster_point_regardless_of_order():
+    df = pd.DataFrame({"runtime": [0.0187, 0.0051], "max_err": [7.7e-10, 3.6e-9]})
+    assert select_representative_pareto(df).name == 1
+    assert select_representative_pareto(df.iloc[::-1]).name == 1

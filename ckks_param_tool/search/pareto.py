@@ -87,4 +87,8 @@ def select_representative_pareto(
     err_norm = (err - err.min()) / (err.max() - err.min())
 
     score = np.sqrt(rt_norm**2 + err_norm**2)
-    return pareto_df.loc[score.idxmin()]
+
+    # ties (always the case for a two-point front) go to the faster, then the more accurate
+    # point, so the result does not depend on the row order
+    order = pd.DataFrame({"score": score.round(12), "runtime": rt, "err": err})
+    return pareto_df.loc[order.sort_values(["score", "runtime", "err"]).index[0]]

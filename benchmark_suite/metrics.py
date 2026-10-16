@@ -80,7 +80,16 @@ def hypervolume_2d(points: np.ndarray, ref: np.ndarray) -> float:
 # normalized objective, slightly worse than the nadir (Ishibuchi et al. 2018). Normalizing by
 # the reference front keeps the yardstick fixed: tool points worse than the reference point
 # contribute nothing, and adding candidates to the tool can never lower its ratio.
-def hypervolume_ratio(reference_front: pd.DataFrame, tool_front: pd.DataFrame, margin: float = 0.1) -> float:
+#
+# The runtime axis is normalized over at least runtime_tol of the fastest runtime: when a front
+# lies within a few percent runtime (same N and chain length), its runtime differences are
+# measurement noise and must not be stretched to the full axis.
+def hypervolume_ratio(
+    reference_front: pd.DataFrame,
+    tool_front: pd.DataFrame,
+    margin: float = 0.1,
+    runtime_tol: float = 0.05,
+) -> float:
     if reference_front.empty:
         return float("nan")
     if tool_front.empty:
@@ -91,6 +100,7 @@ def hypervolume_ratio(reference_front: pd.DataFrame, tool_front: pd.DataFrame, m
 
     ideal = ref_obj.min(axis=0)
     span = ref_obj.max(axis=0) - ideal
+    span[0] = max(span[0], runtime_tol * ideal[0])
     span[span == 0] = 1.0
 
     ref_point = np.full(2, 1.0 + margin)
@@ -159,3 +169,14 @@ def error_agreement(estimate: pd.Series, truth: pd.Series) -> dict:
 
 def safe_ratio(a: float, b: float) -> float:
     return a / b if b and math.isfinite(b) and b != 0 else float("nan")
+
+
+# compares a baseline configuration with every configuration the tool evaluated (all measured
+# with the same test vectors). Returns the fastest configuration at least as precise as the
+# baseline and the most precise configuration at least as fast, or None if there is none.
+def dominating_configs(candidates: pd.DataFrame, baseline_err: float, baseline_runtime: float):
+    as_precise = candidates[candidates["max_err"] <= baseline_err]
+    as_fast = candidates[candidates["runtime"] <= baseline_runtime]
+    fastest = as_precise.loc[as_precise["runtime"].idxmin()] if len(as_precise) else None
+    most_precise = as_fast.loc[as_fast["max_err"].idxmin()] if len(as_fast) else None
+    return fastest, most_precise

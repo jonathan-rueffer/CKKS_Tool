@@ -40,7 +40,9 @@ Test vectors
     rows (the reference) and dataset-agnostic uniform vectors (a naive baseline).
 
 Baseline
-    Tutorial-default parameters versus the tool's recommendation, on the same real rows.
+    Tutorial-default parameters versus every configuration the tool evaluated: the fastest one
+    at least as precise, and the most precise one at least as fast (both re-measured on the same
+    real rows as the baseline).
 '''
 
 logger = logging.getLogger("analyze")
@@ -128,21 +130,26 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
     base = data["baseline"]
     rows = []
     for rec in data["tool"]:
-        rows.append({
+        row = {
             "dataset": name,
-            "target_security": rec["target_security"],
-            "tool_N": rec["poly_degree"],
-            "tool_chain": tuple(rec["chain"]),
-            "tool_security": rec["security"],
-            "tool_precision_bits": rec["inference"]["precision_bits"],
-            "tool_runtime": rec["inference"]["runtime"],
+            "comparison": rec["comparison"],
             "baseline_N": base["poly_degree"],
             "baseline_chain": tuple(base["chain"]),
-            "baseline_security": base["security"],
-            "baseline_precision_bits": base["inference"]["precision_bits"],
-            "baseline_runtime": base["inference"]["runtime"],
-            "speedup_vs_baseline": safe_ratio(base["inference"]["runtime"], rec["inference"]["runtime"]),
-        })
+            "baseline_precision_bits": base["real_rows"]["precision_bits"],
+            "baseline_runtime": base["real_rows"]["runtime"],
+        }
+        if rec["found"]:
+            row.update({
+                "tool_N": rec["poly_degree"],
+                "tool_chain": tuple(rec["chain"]),
+                "tool_security": rec["security"],
+                "tool_precision_bits": rec["real_rows"]["precision_bits"],
+                "tool_runtime": rec["real_rows"]["runtime"],
+                # measured on the same real rows
+                "speedup": safe_ratio(base["real_rows"]["runtime"], rec["real_rows"]["runtime"]),
+                "precision_gain_bits": rec["real_rows"]["precision_bits"] - base["real_rows"]["precision_bits"],
+            })
+        rows.append(row)
     return rows
 
 

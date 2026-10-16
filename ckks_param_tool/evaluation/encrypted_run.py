@@ -18,6 +18,7 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
 
     errors = []
     runtimes = []
+    max_output = 0.0
 
     for _ in range(timing_repeats):
         for x in inputs:
@@ -30,5 +31,13 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
             plain_y = np.atleast_1d(np.asarray(model(x), dtype=float))
             dec_y = np.atleast_1d(dec_y)[: plain_y.size]
             errors.append(float(np.max(np.abs(dec_y - plain_y))))
+            max_output = max(max_output, float(np.max(np.abs(plain_y))))
+
+    # an error at least as large as the outputs themselves means the result overflowed the
+    # modulus (e.g. intermediate products too large for the top modulus) and is meaningless
+    if max_output > 0 and max(errors) >= max_output:
+        raise OverflowError(
+            f"result overflowed: error {max(errors):.3g} >= max |output| {max_output:.3g}"
+        )
 
     return errors, runtimes
