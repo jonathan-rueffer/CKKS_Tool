@@ -16,7 +16,7 @@ class DataConfig:
     method: str = "truncated_normal" # test vector generation strategy
     rounding: Optional[int] = None # optional rounding of the generated test vectors
     random_state: Optional[int] = 42 # random state for reproducibility
-    max_decimal_bits: int = 40 # cap on any precision estimated from the data
+    max_decimal_bits: int = 40 # cap on the precision estimated from decision margins
     target_precision_bits: Optional[int] = None # optional precision target in bits (see README)
     magnitude_samples: int = 10000 # plaintext-only samples used to bound outputs and margins
     output_margin_bits: int = 3 # safety bits added to the estimated output magnitude (sizes q0)
@@ -113,6 +113,7 @@ class SearchPolicyConfig:
 
     poly_degrees: Optional[tuple[int, ...]] = None
     num_scale_options: Optional[int] = None
+    full_grid: Optional[bool] = None
     scale_step: Optional[int] = None
     base_scale_buffer: Optional[int] = None
     min_scale_bits: Optional[int] = None
@@ -139,7 +140,7 @@ class SearchPolicyConfig:
                 object.__setattr__(self, name, tuple(value))
 
         if self.num_scale_options is not None and self.num_scale_options < 0:
-            raise ValueError("search.num_scale_options must be >= 0 (0 = no limit)")
+            raise ValueError("search.num_scale_options must be >= 0 (0 = no grid)")
 
         if self.scale_step is not None and self.scale_step <= 0:
             raise ValueError("search.scale_step must be > 0")

@@ -131,20 +131,6 @@ def magnitude_inputs(source, config: DataConfig) -> np.ndarray:
     return np.vstack([samples, descriptor.stress_vectors()])
 
 
-# estimates the precision bits from the dataset: (input integer bits, finest per-feature
-# resolution in bits, capped). Kept for convenience; the descriptor computes both.
-def estimate_precision_bits(
-    X,
-    max_decimal_bits: int = 40,
-    verbose: bool = False,
-):
-    descriptor = _descriptor(X)
-    int_bits, dec_bits = descriptor.input_int_bits(), descriptor.resolution_bits(max_decimal_bits)
-    if verbose:
-        print(f"CKKS precision estimate: integer bits {int_bits}, decimal bits {dec_bits}")
-    return int_bits, dec_bits
-
-
 def _outputs(model, inputs) -> list[np.ndarray]:
     return [np.atleast_1d(np.asarray(model(np.asarray(x)), dtype=float)) for x in inputs]
 

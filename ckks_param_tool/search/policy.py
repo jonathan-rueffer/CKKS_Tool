@@ -33,11 +33,13 @@ allowed but only add cost; they are kept as a configurable option for exploratio
 Scales. In the RNS representation every prime occupies one 64-bit word (Cheon et al., SAC
 2018), so the cost of encrypted inference depends on N and on the number of primes, but hardly
 on their bit sizes: for a fixed N and chain length a larger scale gives more precision at the
-same runtime. The candidate scales are therefore
-    - the data-derived lower bound (the precision the data needs; optionally a grid above it),
-    - for every security level, the largest scale whose smallest valid chain still fits that
-      level's modulus budget at this N ("budget scales"); these are the most precise
-      configurations each security level admits.
+same runtime. The candidate scales are therefore, for every ring dimension N and security
+level, the largest scale whose smallest valid chain still fits that level's modulus budget at
+this N ("budget scales"): the most precise configuration each (N, security level) admits. They
+cover both ends of the trade-off: the budget scale of a small N at a high security level is the
+cheap, less precise option, that of a larger N the precise one. Scales are not derived from the
+data: input resolution says nothing about the precision an output needs. A precision target set
+by the user only raises the lowest scale considered (min_scale_bits otherwise).
 q0 beyond its minimum only adds headroom, not precision, so by default only the minimum is used.
 Budget scales are also tried with spare levels (budget_extra_levels, default one): before the
 first rescale a value carries scale Delta^2, so at the largest scales the top modulus can be
@@ -54,18 +56,21 @@ class CKKSSearchPolicy:
     # ring dimensions to consider (each is filtered by its 128-bit modulus budget)
     poly_degrees: tuple[int, ...] = (8192, 16384, 32768)
 
-    # how many grid scales to include, starting at the lower bound (1 = only the lower bound,
-    # 0 = every grid step up to the largest feasible scale)
-    num_scale_options: int = 1
+    # grid scales starting at the scale floor, scale_step apart (0 = no grid)
+    num_scale_options: int = 0
+
+    # if True the grid covers every step from the floor to the largest feasible scale
+    full_grid: bool = False
 
     # step size (bits) between grid scales
     scale_step: int = 10
 
-    # buffer (bits) added to the decimal precision estimate before rounding
+    # buffer (bits) added to a user precision target to get the scale floor
     base_scale_buffer: int = 5
 
-    # if set, the grid starts at this scale instead of the data-derived lower bound
-    min_scale_bits: int | None = None
+    # the lowest scale considered by the budget scales, the step-down and the grid. Below about
+    # 2^20 there are too few NTT-friendly primes for N >= 8192 and no useful precision.
+    min_scale_bits: int = 20
 
     # add, for every security level, the largest scale that fits its budget (see above)
     budget_scales: bool = True
@@ -94,7 +99,7 @@ class CKKSSearchPolicy:
             raise ValueError(f"unsupported poly_degrees {unknown}, choose from {sorted(ALLOWED_CHAIN_BITS)}")
         if self.num_scale_options < 0:
             raise ValueError("num_scale_options must be >= 0")
-        if self.min_scale_bits is not None and not 2 <= self.min_scale_bits <= MAX_PRIME_BITS:
+        if not 2 <= self.min_scale_bits <= MAX_PRIME_BITS:
             raise ValueError(f"min_scale_bits must be in [2, {MAX_PRIME_BITS}]")
         if self.scale_step <= 0:
             raise ValueError("scale_step must be > 0")
@@ -127,11 +132,11 @@ class CKKSSearchPolicy:
     def max_scale_bits(self, output_int_bits: int) -> int:
         return MAX_PRIME_BITS - output_int_bits - 1
 
-    # the data-derived lower bound on the scale (or min_scale_bits if set)
-    def lower_scale_bits(self, bits_decimal: int) -> int:
-        if self.min_scale_bits is not None:
+    # the lowest scale considered: min_scale_bits, raised by a user precision target if given
+    def lower_scale_bits(self, target_bits: int | None = None) -> int:
+        if target_bits is None:
             return self.min_scale_bits
-        return self._round_to_10(bits_decimal + self.base_scale_buffer)
+        return max(self.min_scale_bits, self._round_to_10(target_bits + self.base_scale_buffer))
 
     # the largest scale (multiple of 5, >= lower) whose smallest chain fits the budget
     def _budget_scale(self, budget: int, levels: int, lower: int, output_int_bits: int) -> int | None:
@@ -143,21 +148,22 @@ class CKKSSearchPolicy:
         return None
 
     # maps every candidate scale (in bits) for one ring dimension to the spare levels it is
-    # tried with: grid scales use extra_levels, budget scales additionally budget_extra_levels
+    # tried with: grid scales (if any) use extra_levels, budget scales additionally
+    # budget_extra_levels
     def scale_plan(
         self,
-        bits_decimal: int,
+        target_bits: int | None,
         poly_degree: int,
         depth: int,
         output_int_bits: int,
     ) -> dict[int, set[int]]:
-        lower = self.lower_scale_bits(bits_decimal)
+        lower = self.lower_scale_bits(target_bits)
         top = self.max_scale_bits(output_int_bits)
         base_extras = set(self.extra_levels)
 
         plan: dict[int, set[int]] = {}
         i = 0
-        while lower + i * self.scale_step <= top and (self.num_scale_options == 0 or i < self.num_scale_options):
+        while lower + i * self.scale_step <= top and (self.full_grid or i < self.num_scale_options):
             plan.setdefault(lower + i * self.scale_step, set()).update(base_extras)
             i += 1
 
@@ -173,12 +179,12 @@ class CKKSSearchPolicy:
     # the candidate scale sizes (in bits) for one ring dimension
     def candidate_scales(
         self,
-        bits_decimal: int,
+        target_bits: int | None,
         poly_degree: int,
         depth: int,
         output_int_bits: int,
     ) -> list[int]:
-        return sorted(self.scale_plan(bits_decimal, poly_degree, depth, output_int_bits))
+        return sorted(self.scale_plan(target_bits, poly_degree, depth, output_int_bits))
 
     # the special prime should be at least as large as every other prime
     def special_prime_sizes(self, q0: int, scale_bits: int) -> list[int]:
@@ -234,19 +240,18 @@ class CKKSSearchPolicy:
     @classmethod
     def full(cls) -> "CKKSSearchPolicy":
         return cls(
-            num_scale_options=4,
+            num_scale_options=4, # a grid of 4 scales from the floor, in addition to the budget scales
             extra_levels=(0, 1),
             q0_deltas=(0, 10, 20, 30),
             special_primes="all",
         )
 
-    # produces a broad-grid policy, used to compare the tool against a broad search. Its
-    # scales do not depend on the data: every multiple of 5 bits from 2^20 up to the largest
-    # feasible scale. Every candidate of `default` is also a candidate of `broad_grid` (see tests).
+    # produces the benchmark's reference grid: every multiple of 5 bits from 2^20 up to the
+    # largest feasible scale. Every candidate of `default` is also a candidate of `broad_grid` (see tests).
     @classmethod
     def broad_grid(cls) -> "CKKSSearchPolicy":
         return cls(
-            num_scale_options=0,
+            full_grid=True,
             scale_step=5,
             min_scale_bits=20,
             budget_scales=False,

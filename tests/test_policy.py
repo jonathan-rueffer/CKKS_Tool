@@ -38,17 +38,29 @@ def test_extra_levels():
     assert lengths == {3, 5}
 
 
-@pytest.mark.parametrize("dec,out,depth", [(4, 3, 1), (13, 8, 1), (24, 0, 1), (8, 6, 5), (30, 2, 2)])
-def test_default_space_is_subset_of_broad_grid(dec, out, depth):
+@pytest.mark.parametrize("out,depth,target", [(3, 1, None), (8, 1, None), (0, 1, None), (6, 5, None),
+                                              (2, 2, None), (3, 1, 20), (9, 1, 30)])
+def test_default_space_is_subset_of_broad_grid(out, depth, target):
     def key_set(policy):
-        space = CKKSParameterSearchSpace(depth, dec, out, policy)
+        space = CKKSParameterSearchSpace(depth, out, policy, target_bits=target)
         return {(p.poly_degree, p.scale, p.chain) for p in space.generate()}
 
     assert key_set(CKKSSearchPolicy.default()) <= key_set(CKKSSearchPolicy.broad_grid())
 
 
+def test_scales_do_not_depend_on_the_data():
+    # without a precision target the candidates depend only on the model (depth, output bound)
+    a = CKKSParameterSearchSpace(1, output_int_bits=3).generate()
+    b = CKKSParameterSearchSpace(1, output_int_bits=3).generate()
+    assert a == b
+    scales = CKKSSearchPolicy.default().candidate_scales(None, 8192, 1, 3)
+    assert 25 in scales or 35 in scales # the 256-bit budget scale at N=8192 is not cut off
+
+
 def test_infeasible_candidates_are_set_aside():
-    space = CKKSParameterSearchSpace(1, bits_decimal=4, output_int_bits=3)
+    # a 2^10 grid scale has no NTT-friendly primes for N >= 8192
+    space = CKKSParameterSearchSpace(1, output_int_bits=3,
+                                     policy=CKKSSearchPolicy(num_scale_options=1, min_scale_bits=10))
     feasible = space.generate()
     assert space.infeasible
     assert all(p.log_scale > 10 for p in feasible)
@@ -72,7 +84,7 @@ def test_budget_scales_are_largest_fitting_scale_per_level():
     from ckks_param_tool.params import SECURITY_TABLES
 
     policy = CKKSSearchPolicy.default()
-    scales = policy.candidate_scales(bits_decimal=4, poly_degree=8192, depth=1, output_int_bits=3)
+    scales = policy.candidate_scales(None, poly_degree=8192, depth=1, output_int_bits=3)
     for sec in (128, 192, 256):
         budget = SECURITY_TABLES[sec][8192]
         fitting = [s for s in scales
@@ -87,23 +99,21 @@ def test_budget_scales_are_largest_fitting_scale_per_level():
 def test_scales_never_exceed_one_prime_for_q0():
     policy = CKKSSearchPolicy.broad_grid()
     for n in policy.poly_degrees:
-        for s in policy.candidate_scales(bits_decimal=4, poly_degree=n, depth=1, output_int_bits=9):
+        for s in policy.candidate_scales(None, poly_degree=n, depth=1, output_int_bits=9):
             assert policy.base_q0(s, 9) <= 60
 
 
-def test_broad_grid_scales_ignore_the_data():
+def test_broad_grid_covers_every_5_bit_scale():
     policy = CKKSSearchPolicy.broad_grid()
-    a = policy.candidate_scales(bits_decimal=4, poly_degree=8192, depth=1, output_int_bits=3)
-    b = policy.candidate_scales(bits_decimal=30, poly_degree=8192, depth=1, output_int_bits=3)
-    assert a == b == list(range(20, 56, 5))
+    assert policy.candidate_scales(None, poly_degree=8192, depth=1, output_int_bits=3) == list(range(20, 56, 5))
 
 
 def test_budget_scales_get_a_spare_level():
-    space = CKKSParameterSearchSpace(1, bits_decimal=20, output_int_bits=3)
+    space = CKKSParameterSearchSpace(1, output_int_bits=3)
     params = space.generate()
     spare = [p for p in params if p.levels == 2]
     assert spare, "budget scales should also be tried with one spare level"
-    grid = set(CKKSSearchPolicy.default().scale_plan(20, 8192, 1, 3))
+    grid = set(CKKSSearchPolicy.default().scale_plan(None, 8192, 1, 3))
     assert all(p.log_scale in grid for p in spare)
 
 
@@ -121,7 +131,7 @@ def test_default_uses_minimal_q0_only():
 
 
 def test_step_down_keeps_structure():
-    space = CKKSParameterSearchSpace(1, bits_decimal=20, output_int_bits=3)
+    space = CKKSParameterSearchSpace(1, output_int_bits=3)
     space.generate()
     from ckks_param_tool.params import CKKSParams
     p = CKKSParams(8192, 2**55, (60, 55, 60))
@@ -132,7 +142,7 @@ def test_step_down_keeps_structure():
 
 
 def test_step_down_stops_at_lower_bound():
-    space = CKKSParameterSearchSpace(1, bits_decimal=40, output_int_bits=3) # lower bound 50
+    space = CKKSParameterSearchSpace(1, output_int_bits=3, target_bits=40) # floor round10(45) = 50
     space.generate()
     from ckks_param_tool.params import CKKSParams
     assert space.step_down(CKKSParams(8192, 2**50, (60, 50, 60))) is None
@@ -150,7 +160,7 @@ def test_selector_steps_down_after_failure():
                                              security_bits=p.security_score,
                                              status="success" if ok else "failure")
 
-    space = CKKSParameterSearchSpace(1, bits_decimal=20, output_int_bits=3)
+    space = CKKSParameterSearchSpace(1, output_int_bits=3)
     selector = CKKSParameterSelector(Evaluator(), space)
     results = selector.select()
     evaluated = {p.chain for p, _ in results}

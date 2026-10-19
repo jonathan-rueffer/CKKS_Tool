@@ -1,30 +1,14 @@
 import numpy as np
 
-from ckks_param_tool.data.generators import estimate_precision_bits, estimate_output_int_bits
+from ckks_param_tool import DataDescriptor
+from ckks_param_tool.data.generators import estimate_output_int_bits
 from ckks_param_tool.evaluation.metrics import precision_bits
 from ckks_param_tool.models import LinearModel
 
 
-def test_gaps_are_per_feature():
-    # each feature has resolution 0.5 (1 bit); values of different features are 1e-6 apart,
-    # which the old flattened estimate would have turned into 20 bits
-    X = np.array([[0.0, 1e-6], [0.5, 0.500001], [1.0, 1.000001]])
-    assert estimate_precision_bits(X)[1] == 1
-
-
-def test_float_noise_is_ignored():
-    X = np.array([[0.1], [0.1 + 1e-17], [0.2]])
-    assert estimate_precision_bits(X)[1] == 4 # gap 0.1 -> ceil(3.32)
-
-
-def test_decimal_bits_are_capped():
-    X = np.array([[0.0], [2.0**-50], [1.0]])
-    assert estimate_precision_bits(X, max_decimal_bits=40)[1] <= 40
-
-
 def test_integer_bits():
     X = np.array([[100.0, -300.0]])
-    assert estimate_precision_bits(X)[0] == 9
+    assert DataDescriptor.from_data(X).input_int_bits() == 9
 
 
 def test_output_int_bits():

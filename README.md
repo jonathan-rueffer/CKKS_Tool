@@ -10,7 +10,7 @@ The tool analyzes the dataset and the model, generates and evaluates candidate p
 
 Homomorphic encryption enables secure outsourced computation, but choosing CKKS parameters requires expert knowledge. The tool:
 
-- is run by the **client**, on a **data descriptor** (per-feature mean, standard deviation, minimum, maximum and resolution) that it computes locally, so no record enters the tool;
+- is run by the **client**, on a **data descriptor** (per-feature mean, standard deviation, minimum and maximum) that it computes locally, so no record enters the tool;
 - treats the service's model as a black box with a known multiplicative depth, and bounds its outputs from the descriptor;
 - generates a workload-specific search space of parameter sets `(N, Δ, Q)` that the library can instantiate;
 - evaluates every candidate with encrypted inference on representative (synthetic) test vectors;
@@ -26,14 +26,16 @@ Chains follow the SEAL / TenSEAL structure `(q0, q1, …, qL, special)`:
 | `q1 … qL` | one prime per rescale, sized like the scale `Δ`. TenSEAL rescales after **every** multiplication (ciphertext-plaintext included), so a model of depth `L` needs exactly `L` of them. |
 | `q0` | holds the output after the last rescale: `log2 q0 ≥ log2 Δ + b_out + 1` (rounded up to a multiple of 10). `b_out` is the integer bits of the largest plaintext output on 10,000 samples drawn from the descriptor plus its stress vectors (each feature at its minimum or maximum, the others at their mean), plus a 3-bit safety margin (`data.output_margin_bits`). Only this minimum is used: extra bits in `q0` add headroom, not precision. |
 | special prime | key-switching prime, at least as large as every other prime. Two sizes are tried: the smallest valid one (cheapest in the security budget) and 60 bits (least key-switching noise). |
-| scale `Δ` | a lower bound (the data's finest per-feature resolution plus a buffer, or `data.target_precision_bits` if set), plus, for each security level, the largest scale whose smallest valid chain fits that level's budget at this `N` (the *budget scales*). Budget scales are also tried with one spare level. |
+| scale `Δ` | for each `N` and security level, the largest scale (multiple of 5 bits, at least 2^20) whose smallest valid chain fits that level's budget at this `N` (the *budget scales*), also tried with one spare level. A precision target (`data.target_precision_bits`) raises the lowest scale considered. |
 | `N` | every supported ring dimension whose 128-bit budget fits the chain. |
 
-**Why only these scales.** Every prime takes one 64-bit word in the RNS representation, so runtime depends on `N` and the number of primes but hardly on the scale: for a given `N` and chain length a larger scale gives more precision at the same cost. Each `(N, chain length)` therefore has one Pareto-optimal configuration, the largest scale that works, and that is what the budget scales target. The lower bound guarantees a candidate that meets the data's precision.
+**Why only these scales.** Every prime takes one 64-bit word in the RNS representation, so runtime depends on `N` and the number of primes but hardly on the scale: for a given `N` and chain length a larger scale gives more precision at the same cost. Each `(N, chain length)` therefore has one Pareto-optimal configuration, the largest scale that works, and that is what the budget scales target. Together they cover both ends of the trade-off: the budget scale of a small `N` at a high security level is the cheap, less precise option, that of a larger `N` the precise one.
+
+**What the data decides.** The scales are not derived from the data: an earlier version used the finest per-feature resolution of the data as a lower bound on the scale, but input resolution says nothing about the precision an output needs, the bound almost never applied, and where it did it excluded the only fast configuration of a security level. The data instead sizes `q0` (through the output bound), supplies the test vectors that measure every candidate and drive the step-down, and, for classifiers, gives the decision margins (information only). A precision floor comes only from the user (`data.target_precision_bits`).
 
 **Overflow.** CKKS computes modulo `q`: every value is multiplied by the scale and must fit in the current modulus, otherwise it wraps around and decrypts to garbage (an error of about `q0 / Δ`). This can happen at the end (the output must fit in `q0`, which is why `q0` is sized from the output) and after a multiplication (see step-down). On real rows the tool reports the share of rows whose error is at least as large as their own output (and at least 1) as the *overflow rate*.
 
-**Step-down.** Before the first rescale a value carries scale `Δ²`, so at large scales the top modulus can be too small for intermediate products (for example, large raw inputs times weights). If a candidate fails or returns a result whose error is at least as large as the output itself, the same structure (`N`, number of levels, `q0` rule, special prime rule) is retried 5 bits lower, until one works or the lower bound is reached. Every attempt is kept in `param_search.csv`.
+**Step-down.** Before the first rescale a value carries scale `Δ²`, so at large scales the top modulus can be too small for intermediate products (for example, large raw inputs times weights). If a candidate fails or returns a result whose error is at least as large as the output itself, the same structure (`N`, number of levels, `q0` rule, special prime rule) is retried 5 bits lower, until one works or the lowest scale considered is reached. Every attempt is kept in `param_search.csv`.
 
 Chains that SEAL cannot build (a prime size outside 2–60 bits, or not enough primes `≡ 1 mod 2N` of a given size) are recorded in `infeasible.csv` and not evaluated.
 
@@ -144,8 +146,8 @@ All results are measured on the test vectors. Each saved run contains `config.js
 |---|---|---|---|
 | `data` | `num_samples` | 10 | number of representative test vectors |
 | | `method` | `truncated_normal` | sampler (`truncated_normal`, `gaussian`, `uniform`, `student_t`) |
-| | `max_decimal_bits` | 40 | cap on any precision estimated from the data |
-| | `target_precision_bits` | `None` | optional precision target: raises the lower bound on the scale, and the fastest configuration meeting it is reported per security level |
+| | `max_decimal_bits` | 40 | cap on the precision estimated from decision margins |
+| | `target_precision_bits` | `None` | optional precision target: raises the lowest scale considered, and the fastest configuration meeting it is reported per security level |
 | | `magnitude_samples` | 10000 | plaintext-only samples used to bound outputs and margins |
 | | `output_margin_bits` | 3 | safety bits added to the output bound that sizes `q0` |
 | | `margin_quantile` | 0.01 | classifiers: estimated precision keeps `1 - q` of predictions |
@@ -155,8 +157,8 @@ All results are measured on the test vectors. Each saved run contains `config.js
 | | `warmup_runs` | 1 | untimed inferences before timing a candidate |
 | | `timing_repeats` | 1 | timed passes over the inputs |
 | | `n_threads` | `None` | TenSEAL threads (`None` = all cores) |
-| `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (grid of 4 scales, `q0` offsets, every special prime size, one spare level), `broad_grid` (the benchmark's reference grid, see below) or `custom` |
-| | `poly_degrees`, `num_scale_options` (grid scales above the lower bound; 1 = only the lower bound, 0 = no limit), `scale_step`, `base_scale_buffer`, `min_scale_bits`, `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
+| `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (adds a grid of 4 scales from the floor, `q0` offsets, every special prime size, one spare level), `broad_grid` (the benchmark's reference grid, see below) or `custom` |
+| | `poly_degrees`, `min_scale_bits` (lowest scale considered, 20), `num_scale_options` (grid scales from that floor in addition to the budget scales, 0 = none), `full_grid` (grid up to the largest feasible scale), `scale_step`, `base_scale_buffer` (added to a precision target to get the floor), `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
 | | `runtime_tolerance` | 0.05 | runtimes within this relative difference count as equal (knee, endpoints, ε-recall) |
 | | `precision_tolerance_bits` | 1.5 | precisions within this many bits count as equal ("most precise" endpoint, ε-recall); twice the largest standard deviation measured by `benchmark_suite.noise` |
 | | `min_precision_bits` | 0 | reported points (knee, endpoints) must reach this precision |

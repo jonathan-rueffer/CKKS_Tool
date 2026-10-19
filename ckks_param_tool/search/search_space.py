@@ -7,17 +7,18 @@ This file contains the class that defines the search space generation functional
 
 
 class CKKSParameterSearchSpace:
+    # target_bits: an optional precision target that raises the lowest scale considered
     def __init__(
         self,
         depth: int,
-        bits_decimal: int,
         output_int_bits: int,
         policy: CKKSSearchPolicy | None = None,
+        target_bits: int | None = None,
     ):
         if depth < 1:
             raise ValueError("depth must be >= 1")
         self.depth = depth
-        self.bits_decimal = bits_decimal
+        self.target_bits = target_bits
         self.output_int_bits = output_int_bits
         self.policy = policy or CKKSSearchPolicy.default()
 
@@ -33,7 +34,7 @@ class CKKSParameterSearchSpace:
 
         for deg in self.policy.poly_degrees:
             plan = self.policy.scale_plan(
-                self.bits_decimal, deg, self.depth, self.output_int_bits
+                self.target_bits, deg, self.depth, self.output_int_bits
             )
             for scale_bits, extra_levels in sorted(plan.items()):
                 chains = self.policy.generate_chains(
@@ -54,7 +55,7 @@ class CKKSParameterSearchSpace:
         return params
 
     # the same structure (N, number of levels, q0 offset, special prime rule) at the next lower
-    # scale that SEAL can build, or None once the data-derived lower bound is passed. Used when
+    # scale that SEAL can build, or None once the lowest scale considered is passed. Used when
     # a candidate fails or overflows: the intermediate values were too large for its modulus.
     def step_down(self, params: CKKSParams) -> CKKSParams | None:
         step = self.policy.step_down_bits
@@ -62,7 +63,7 @@ class CKKSParameterSearchSpace:
             return None
 
         out = self.output_int_bits
-        lower = max(self.policy.lower_scale_bits(self.bits_decimal), 2)
+        lower = max(self.policy.lower_scale_bits(self.target_bits), 2)
         old_scale = params.log_scale
         q0_offset = params.chain[0] - self.policy.base_q0(old_scale, out)
         special_is_min = params.chain[-1] == max(params.chain[0], old_scale)

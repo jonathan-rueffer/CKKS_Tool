@@ -3,7 +3,6 @@ from .generators import (
     generate_representative_test_vectors,
     generate_test_vectors,
     magnitude_inputs,
-    estimate_precision_bits,
     estimate_output_int_bits,
     estimate_required_precision_bits,
 )
@@ -40,7 +39,6 @@ __all__ = [
     "load_iris_data",
     "load_ionosphere_data",
     "client_server_split",
-    "estimate_precision_bits",
     "estimate_output_int_bits",
     "load_mnist_data",
     "load_credit_default_data",

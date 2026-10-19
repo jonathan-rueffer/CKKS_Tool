@@ -33,8 +33,7 @@ class ExperimentResult:
 
     # what the tool derived from the data descriptor and the model
     input_int_bits: int | None = None
-    resolution_bits: int | None = None # finest per-feature resolution of the data
     estimated_required_bits: int | None = None # classifiers: precision that keeps predictions (info)
     target_precision_bits: int | None = None # user-provided precision target, if any
-    decimal_bits: int | None = None # lower bound on the scale passed to the search space
+    scale_floor_bits: int | None = None # the lowest scale the search considered
     output_int_bits: int | None = None # integer bits of the output, safety margin included

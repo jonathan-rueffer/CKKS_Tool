@@ -42,8 +42,8 @@ def test_no_feasible_candidates_does_not_crash(tmp_path):
     model = LinearModel(np.ones(X.shape[1]), 0.0)
 
     # a single 2^10 scale has no NTT-friendly primes for N >= 8192
-    config = {"search": {"profile": "fast", "base_scale_buffer": 0, "budget_scales": False},
-              "data": {"target_precision_bits": 1}}
+    config = {"search": {"profile": "fast", "budget_scales": False, "num_scale_options": 1,
+                         "min_scale_bits": 10}}
     exp = Experiment(DataDescriptor.from_data(X), model, config=config)
     result = exp.run()
 

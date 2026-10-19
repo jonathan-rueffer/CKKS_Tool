@@ -20,8 +20,7 @@ def test_descriptor_from_data_and_roundtrip(tmp_path):
     d = DataDescriptor.from_data(X)
     assert d.num_features == 3
     assert d.min == (0.0, 10.0, 5.0) and d.max == (1.0, 40.0, 5.0)
-    assert d.resolution == (0.5, 10.0, None) # constant feature has no resolution
-    assert d.resolution_bits() == 1
+    assert set(d.to_dict()) == {"mean", "std", "min", "max"} # nothing else is shared
     assert d.input_int_bits() == 6 # 40 -> 6 bits
 
     d.save(tmp_path / "d.json")

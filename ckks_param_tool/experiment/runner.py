@@ -164,10 +164,9 @@ class Experiment:
             "model_depth": self.model.multiplicative_depth,
             "model_task": getattr(self.model, "task", "regression"),
             "input_int_bits": r.input_int_bits,
-            "resolution_bits": r.resolution_bits,
             "estimated_required_bits": r.estimated_required_bits,
             "target_precision_bits": r.target_precision_bits,
-            "decimal_bits": r.decimal_bits, # the lower bound passed to the search space
+            "scale_floor_bits": r.scale_floor_bits, # the lowest scale the search considered
             "output_int_bits": r.output_int_bits,
             "output_margin_bits": self.config.data.output_margin_bits,
             "num_candidates": len(r.param_search_results),
@@ -192,7 +191,6 @@ class Experiment:
         bounds_inputs = magnitude_inputs(self.descriptor, data_cfg)
 
         bits_int = self.descriptor.input_int_bits()
-        resolution_bits = self.descriptor.resolution_bits(data_cfg.max_decimal_bits)
 
         # the last prime has to hold the model output, so size it from the largest plaintext
         # output on the bound inputs, plus a safety margin for inputs beyond them
@@ -207,13 +205,10 @@ class Experiment:
         )
         target_bits = data_cfg.target_precision_bits
 
-        # lower bound on the scale: the precision target if set, else the data's resolution
-        lower_bound_bits = target_bits if target_bits is not None else resolution_bits
-
         logger.info(
-            "data: input int bits=%d, resolution bits=%d | output int bits=%d (incl. %d safety) | "
+            "data: input int bits=%d | output int bits=%d (incl. %d safety) | "
             "estimated precision need=%s | target=%s",
-            bits_int, resolution_bits, output_int_bits, data_cfg.output_margin_bits,
+            bits_int, output_int_bits, data_cfg.output_margin_bits,
             f"{estimated_required_bits} bits" if estimated_required_bits is not None else "n/a (regression)",
             f"{target_bits} bits" if target_bits is not None else "none",
         )
@@ -223,9 +218,9 @@ class Experiment:
 
         search_space = CKKSParameterSearchSpace(
             depth=self.model.multiplicative_depth,
-            bits_decimal=lower_bound_bits,
             output_int_bits=output_int_bits,
-            policy=policy
+            policy=policy,
+            target_bits=target_bits,
         )
 
         # initialze the evaluator
@@ -288,10 +283,9 @@ class Experiment:
             search_seconds=search_seconds,
             step_downs=selector.step_downs,
             input_int_bits=bits_int,
-            resolution_bits=resolution_bits,
             estimated_required_bits=estimated_required_bits,
             target_precision_bits=target_bits,
-            decimal_bits=lower_bound_bits,
+            scale_floor_bits=policy.lower_scale_bits(target_bits),
             output_int_bits=output_int_bits,
         )
 
