@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field
 from ckks_param_tool.params import CKKSParams
-from ckks_param_tool.evaluation import InferenceEvaluationResult, ParameterEvaluationResult
+from ckks_param_tool.evaluation import ParameterEvaluationResult
 
 '''
 This file contains the class that outlines the results of running the tool.
@@ -15,8 +15,8 @@ class ExperimentResult:
     # a list of (params, metrics) that are Pareto-optimal for at least one security level
     pareto_params: list[tuple[CKKSParams, ParameterEvaluationResult]]
 
-    # (target security level, params, real inference evaluation) for each security level
-    recommended_params: list[tuple[int, CKKSParams, InferenceEvaluationResult]]
+    # (target security level, params, test-vector result) for each security level
+    recommended_params: list[tuple[int, CKKSParams, ParameterEvaluationResult]]
 
     # candidates the policy produced but SEAL cannot instantiate, with the reason
     infeasible: list[tuple[CKKSParams, str]] = field(default_factory=list)
@@ -27,7 +27,7 @@ class ExperimentResult:
     # candidates added because a candidate failed and was retried at a lower scale
     step_downs: int = 0
 
-    # (target security level, label, params, real inference evaluation) for the front's endpoints
+    # (target security level, label, params, test-vector result) for the front's endpoints
     # ("fastest", "most_precise") and, if a precision target is set, "fastest_meeting_target"
     front_points: list = field(default_factory=list)
 

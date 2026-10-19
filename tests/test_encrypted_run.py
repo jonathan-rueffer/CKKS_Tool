@@ -76,3 +76,25 @@ def test_tiny_outputs_are_not_overflow():
 
     outputs = [(np.array([1e-8 + 1e-6]), np.array([1e-8]))] # logit near 0, small error
     assert task_metrics("binary", outputs)["overflow_rate"] == 0.0
+
+
+def test_mnist_forward_handles_bias_before_matmul():
+    # a plaintext bias added before a further matmul corrupts the result in TenSEAL; the MNIST
+    # forward pass adds those biases as encrypted vectors
+    pytest.importorskip("tenseal")
+    torch = pytest.importorskip("torch")
+    from ckks_param_tool.models.mnist_square import SquareNet, build_wrapped_mnist_model
+    from ckks_param_tool.params import CKKSParams
+    from ckks_param_tool.encryption import TenSEALBackend
+
+    torch.manual_seed(0)
+    net = SquareNet()
+    with torch.no_grad():
+        for layer in (net.fc1, net.fc2, net.fc3):
+            layer.bias.uniform_(0.5, 1.0) # clearly non-zero biases
+    model = build_wrapped_mnist_model(net)
+
+    x = np.random.default_rng(0).uniform(size=(1, 784))
+    backend = TenSEALBackend(CKKSParams(16384, 2**45, (60,) + (45,) * 5 + (60,)))
+    errors, _, _ = run_encrypted_inference(backend, model, x, warmup_runs=0)
+    assert max(errors) < 1e-2

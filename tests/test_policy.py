@@ -26,7 +26,7 @@ def test_special_prime_is_largest():
 
 
 def test_chains_fit_128_bit_budget():
-    policy = CKKSSearchPolicy.fuller()
+    policy = CKKSSearchPolicy.broad_grid()
     for n in policy.poly_degrees:
         for chain in policy.generate_chains(n, 40, 3, output_int_bits=2):
             assert sum(chain) <= ALLOWED_CHAIN_BITS[n]
@@ -39,12 +39,12 @@ def test_extra_levels():
 
 
 @pytest.mark.parametrize("dec,out,depth", [(4, 3, 1), (13, 8, 1), (24, 0, 1), (8, 6, 5), (30, 2, 2)])
-def test_default_space_is_subset_of_fuller(dec, out, depth):
+def test_default_space_is_subset_of_broad_grid(dec, out, depth):
     def key_set(policy):
         space = CKKSParameterSearchSpace(depth, dec, out, policy)
         return {(p.poly_degree, p.scale, p.chain) for p in space.generate()}
 
-    assert key_set(CKKSSearchPolicy.default()) <= key_set(CKKSSearchPolicy.fuller())
+    assert key_set(CKKSSearchPolicy.default()) <= key_set(CKKSSearchPolicy.broad_grid())
 
 
 def test_infeasible_candidates_are_set_aside():
@@ -54,18 +54,18 @@ def test_infeasible_candidates_are_set_aside():
     assert all(p.log_scale > 10 for p in feasible)
 
 
-@pytest.mark.parametrize("profile", ["fast", "full", "fuller"])
+@pytest.mark.parametrize("profile", ["fast", "full", "broad_grid"])
 def test_from_config_uses_preset(profile):
     policy = CKKSSearchPolicy.from_config(SearchPolicyConfig(profile=profile))
     assert policy == getattr(CKKSSearchPolicy, profile)()
 
 
 def test_from_config_overrides():
-    cfg = SearchPolicyConfig(profile="fuller", q0_deltas=[0, 10], max_qL=50)
+    cfg = SearchPolicyConfig(profile="broad_grid", q0_deltas=[0, 10], max_qL=50)
     policy = CKKSSearchPolicy.from_config(cfg)
     assert policy.q0_deltas == (0, 10)
     assert policy.max_qL == 50
-    assert policy.extra_levels == CKKSSearchPolicy.fuller().extra_levels
+    assert policy.extra_levels == CKKSSearchPolicy.broad_grid().extra_levels
 
 
 def test_budget_scales_are_largest_fitting_scale_per_level():
@@ -85,14 +85,14 @@ def test_budget_scales_are_largest_fitting_scale_per_level():
 
 
 def test_scales_never_exceed_one_prime_for_q0():
-    policy = CKKSSearchPolicy.fuller()
+    policy = CKKSSearchPolicy.broad_grid()
     for n in policy.poly_degrees:
         for s in policy.candidate_scales(bits_decimal=4, poly_degree=n, depth=1, output_int_bits=9):
             assert policy.base_q0(s, 9) <= 60
 
 
-def test_fuller_scales_ignore_the_data():
-    policy = CKKSSearchPolicy.fuller()
+def test_broad_grid_scales_ignore_the_data():
+    policy = CKKSSearchPolicy.broad_grid()
     a = policy.candidate_scales(bits_decimal=4, poly_degree=8192, depth=1, output_int_bits=3)
     b = policy.candidate_scales(bits_decimal=30, poly_degree=8192, depth=1, output_int_bits=3)
     assert a == b == list(range(20, 56, 5))
@@ -111,7 +111,7 @@ def test_special_prime_min_max():
     policy = CKKSSearchPolicy.default()
     assert policy.special_prime_sizes(q0=50, scale_bits=45) == [50, 60]
     assert policy.special_prime_sizes(q0=60, scale_bits=55) == [60]
-    assert CKKSSearchPolicy.fuller().special_prime_sizes(q0=40, scale_bits=35) == [40, 50, 60]
+    assert CKKSSearchPolicy.broad_grid().special_prime_sizes(q0=40, scale_bits=35) == [40, 50, 60]
 
 
 def test_default_uses_minimal_q0_only():

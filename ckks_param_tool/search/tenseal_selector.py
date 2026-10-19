@@ -17,11 +17,15 @@ class CKKSParameterSelector(ParameterSelector):
     # target_bits: an optional precision target; if set, the fastest configuration meeting it is
     # reported for every security level as well
     def __init__(self, evaluator, search_space, recommendation_policy: str = "knee",
-                 target_bits: float | None = None):
+                 target_bits: float | None = None, runtime_tol: float = 0.05,
+                 precision_tol_bits: float = 1.5, min_precision_bits: float = 0.0):
         self.evaluator = evaluator # how to evaluate a parameter set
         self.search_space = search_space # how to generate candidates
         self.recommendation_policy = recommendation_policy
         self.target_bits = target_bits
+        self.runtime_tol = runtime_tol
+        self.precision_tol_bits = precision_tol_bits
+        self.min_precision_bits = min_precision_bits
         self.results = None
         self.step_downs = 0
 
@@ -80,17 +84,23 @@ class CKKSParameterSelector(ParameterSelector):
 
             df.loc[subset.index, f"pareto_{sec}"] = mask
 
+            # points are reported only if they reach the minimum precision ("usable" front)
             pareto_df = subset[mask]
+            usable = pareto_df[pareto_df["precision_bits"] >= self.min_precision_bits]
+            if usable.empty:
+                continue
 
             # apply the knee point logic
-            rep = select_representative_pareto(pareto_df, self.recommendation_policy)
+            rep = select_representative_pareto(usable, self.recommendation_policy,
+                                               self.runtime_tol, self.precision_tol_bits)
 
             df.loc[rep.name, f"recommended_{sec}"] = True
             recommended.append((sec,) + self.results[rep.name])
 
-            points = {"fastest": fastest_point(pareto_df), "most_precise": most_precise_point(pareto_df)}
+            points = {"fastest": fastest_point(usable, self.runtime_tol),
+                      "most_precise": most_precise_point(usable, self.precision_tol_bits)}
             if self.target_bits is not None:
-                points["fastest_meeting_target"] = fastest_meeting(pareto_df, self.target_bits)
+                points["fastest_meeting_target"] = fastest_meeting(usable, self.target_bits, self.runtime_tol)
             for label, row in points.items():
                 if row is not None:
                     front_points.append((sec, label) + self.results[row.name])

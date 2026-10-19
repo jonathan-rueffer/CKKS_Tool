@@ -13,7 +13,7 @@ server split) and saves the results.
 
 
 def main(argv=None):
-    from ckks_param_tool import Experiment, client_server_split
+    from ckks_param_tool import Experiment, DataDescriptor, client_server_split
     from ckks_param_tool.config import load_experiment_config
     from ckks_param_tool.config.experiment import SEARCH_PROFILES
     from ckks_param_tool.data.registry import DATASETS
@@ -42,7 +42,8 @@ def main(argv=None):
     X_client, X_server, _, y_server = client_server_split(X, y)
     model = trainer(X_server, y_server)
 
-    experiment = Experiment(X_client, model, config=config)
+    # the client computes its descriptor locally; only the descriptor enters the tool
+    experiment = Experiment(DataDescriptor.from_data(X_client), model, config=config)
     experiment.run(verbose=not args.quiet)
     run_dir = experiment.save(args.output / args.dataset)
     print(f"results written to {run_dir}")

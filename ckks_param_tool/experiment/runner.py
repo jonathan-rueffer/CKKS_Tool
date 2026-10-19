@@ -21,11 +21,7 @@ from ckks_param_tool.data.generators import (
 )
 
 #Evaluation:
-from ckks_param_tool.evaluation import (
-    TenSEALParameterEvaluator,
-    TenSEALInferenceEvaluator,
-    InferenceEvaluationResult,
-)
+from ckks_param_tool.evaluation import TenSEALParameterEvaluator
 
 #Search:
 from ckks_param_tool.search import (
@@ -54,16 +50,21 @@ logger = logging.getLogger(__name__)
 
 class Experiment:
 
-    # this is the object that the user loads. `data` is either the client's raw data or a
-    # DataDescriptor computed by the client (per-feature statistics). With a descriptor the tool
-    # never sees a record, but the recommendations can then only be reported on the test vectors.
-    def __init__(self, data, model, config=None, test_vector_policy="representative"):
-        if isinstance(data, DataDescriptor):
-            self.dataset = None
-            self.descriptor = data
-        else:
-            self.dataset = data # the client dataset
-            self.descriptor = DataDescriptor.from_data(data)
+    # this is the object that the user loads. It is meant to be run by the client:
+    #   descriptor : the client's DataDescriptor (per-feature statistics), computed locally with
+    #                DataDescriptor.from_data. No record ever enters the tool.
+    #   model      : the service's model as a black box. The tool only calls it in plaintext on
+    #                synthetic vectors, and on ciphertexts (the service's encrypted inference),
+    #                and reads its declared multiplicative_depth and task.
+    def __init__(self, descriptor, model, config=None, test_vector_policy="representative"):
+        if not isinstance(descriptor, DataDescriptor):
+            raise TypeError(
+                "Experiment takes a DataDescriptor, not raw data: compute "
+                "DataDescriptor.from_data(X) on the client and pass that"
+            )
+        if test_vector_policy == "random_rows":
+            raise ValueError("the random_rows policy needs raw data; it is only used in the benchmark")
+        self.descriptor = descriptor
         self.model = model # the model
         self.config = load_experiment_config(config) # optional config (path, dict or object)
         self.results: ExperimentResult | None = None
@@ -82,11 +83,8 @@ class Experiment:
             print(f"Scale           : 2^{params.log_scale}")
             print(f"Chain           : {params.chain}")
             print(f"Security (bits) : {params.security_score}")
-            print(f"Inference error : {inf.error:.4e} ({inf.precision_bits:.1f} bits, {inf.status})")
-            print(f"Inference time  : {inf.runtime:.4f}s")
-            if inf.prediction_agreement is not None:
-                print(f"Prediction agreement : {inf.prediction_agreement:.1%}")
-            print()
+            print(f"Error           : {inf.error:.4e} ({inf.precision_bits:.1f} bits)")
+            print(f"Median runtime  : {inf.runtime:.4f}s\n")
 
     def _save_config(self, run_dir: Path):
         with open(run_dir / "config.json", "w") as f:
@@ -113,31 +111,51 @@ class Experiment:
         plots_dir.mkdir()
         self.plot(output_dir=plots_dir, show=False)
 
-    def _describe(self, params, inference) -> dict:
-        tv = next(r for p, r in self.results.param_search_results if p == params)
+    @staticmethod
+    def _describe(params, result) -> dict:
         return {
             "security": params.security_score,
             "poly_degree": params.poly_degree,
             "scale": params.scale,
             "log_scale": params.log_scale,
             "chain": list(params.chain),
-            "test_vectors": {"error": tv.error, "precision_bits": tv.precision_bits, "runtime": tv.runtime},
-            "inference": inference.to_dict(),
+            # measured on the test vectors
+            "error": result.error,
+            "precision_bits": result.precision_bits,
+            "relative_precision_bits": result.relative_precision_bits,
+            "runtime": result.runtime,
+            "runtime_std": result.runtime_std,
         }
 
     # per security level: the recommendation (knee by default) and the front's endpoints
     def _save_recommended_params(self, run_dir: Path):
         summary = []
 
-        for sec, params, inference in self.results.recommended_params:
-            entry = {"target_security": sec, **self._describe(params, inference)}
-            for s, label, p, inf in self.results.front_points:
+        for sec, params, result in self.results.recommended_params:
+            entry = {"target_security": sec, **self._describe(params, result)}
+            for s, label, p, r in self.results.front_points:
                 if s == sec:
-                    entry[label] = self._describe(p, inf)
+                    entry[label] = self._describe(p, r)
             summary.append(entry)
 
         with open(run_dir / "recommended_params.json", "w") as f:
             json.dump(summary, f, indent=2)
+
+    # what evaluating every candidate through a remote service would cost the client: the keys
+    # uploaded once per candidate, and every encrypted query's input and output ciphertexts
+    def _tuning_cost(self) -> dict:
+        results = [r for _, r in self.results.param_search_results]
+        measured = [r for r in results if np.isfinite(r.eval_key_bytes)]
+        return {
+            "candidates": len(results),
+            "encrypted_queries": int(sum(r.encrypted_queries for r in results)),
+            "keygen_seconds": float(np.nansum([r.keygen_seconds for r in results])),
+            "measured_candidates": len(measured),
+            "eval_key_bytes": float(sum(r.eval_key_bytes for r in measured)),
+            "ciphertext_bytes": float(sum(
+                r.encrypted_queries * (r.input_ciphertext_bytes + r.output_ciphertext_bytes) for r in measured
+            )),
+        }
 
     def _save_run_info(self, run_dir: Path):
         r = self.results
@@ -157,6 +175,7 @@ class Experiment:
             "num_infeasible": len(r.infeasible),
             "num_step_downs": r.step_downs,
             "search_seconds": r.search_seconds,
+            "tuning_cost": self._tuning_cost(),
             "environment": environment_info(self.config.evaluation.n_threads),
         }
         with open(run_dir / "run_info.json", "w") as f:
@@ -166,12 +185,10 @@ class Experiment:
     def run(self, verbose: bool = False) -> ExperimentResult:
 
         data_cfg = self.config.data
-        source = self.dataset if self.test_vector_policy == "random_rows" else self.descriptor
-
         # the test vectors that are encrypted during the evaluation
-        test_vectors = generate_test_vectors(source, data_cfg, test_vector_policy=self.test_vector_policy)
+        test_vectors = generate_test_vectors(self.descriptor, data_cfg, test_vector_policy=self.test_vector_policy)
 
-        # plaintext-only inputs from the descriptor: many samples plus stress vectors
+        # plaintext-only inputs: many samples from the descriptor plus its stress vectors
         bounds_inputs = magnitude_inputs(self.descriptor, data_cfg)
 
         bits_int = self.descriptor.input_int_bits()
@@ -224,6 +241,9 @@ class Experiment:
             search_space=search_space,
             recommendation_policy=self.config.evaluation.recommendation,
             target_bits=target_bits,
+            runtime_tol=self.config.evaluation.runtime_tolerance,
+            precision_tol_bits=self.config.evaluation.precision_tolerance_bits,
+            min_precision_bits=self.config.evaluation.min_precision_bits,
         )
 
         # generate the search space and evaluate it
@@ -249,32 +269,8 @@ class Experiment:
         df_pareto = selection["df"]
         self.pareto_df = df_pareto[df_pareto["status"] == "success"]
 
-        # evaluate the recommendations and front points on real entries, if the raw data is
-        # available (each distinct configuration once); with a descriptor only, the test-vector
-        # measurements are reported instead
-        evaluated = {}
-        inference_evaluator = None
-        if self.dataset is not None:
-            inference_evaluator = TenSEALInferenceEvaluator(
-                model=self.model, X=self.dataset, config=self.config.evaluation
-            )
-
-        def real_rows(params, result):
-            if params not in evaluated:
-                if inference_evaluator is not None:
-                    evaluated[params] = inference_evaluator.evaluate(params)
-                else:
-                    evaluated[params] = InferenceEvaluationResult(
-                        error=result.error, runtime=result.runtime, runtime_std=result.runtime_std,
-                        status="test vectors only",
-                    )
-            return evaluated[params]
-
-        recommended = [(sec, params, real_rows(params, result)) for sec, params, result in selection["recommended"]]
-        front_points = [
-            (sec, label, params, real_rows(params, result))
-            for sec, label, params, result in selection["front_points"]
-        ]
+        recommended = selection["recommended"] # (security, params, test-vector result)
+        front_points = selection["front_points"] # (security, label, params, test-vector result)
 
         if target_bits is not None:
             met = {sec for sec, label, _, _ in front_points if label == "fastest_meeting_target"}

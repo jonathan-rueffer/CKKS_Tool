@@ -17,7 +17,10 @@ from .loaders import (
     load_heart_disease_data,
     load_iris_data,
     load_ionosphere_data,
-    load_mnist_data
+    load_mnist_data,
+    load_credit_default_data,
+    load_bank_marketing_data,
+    load_wine_quality_data,
 )
 from .splits import client_server_split
 
@@ -39,5 +42,8 @@ __all__ = [
     "client_server_split",
     "estimate_precision_bits",
     "estimate_output_int_bits",
-    "load_mnist_data"
+    "load_mnist_data",
+    "load_credit_default_data",
+    "load_bank_marketing_data",
+    "load_wine_quality_data"
 ]

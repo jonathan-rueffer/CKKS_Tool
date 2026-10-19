@@ -28,9 +28,19 @@ class TenSEALParameterEvaluator(ParameterEvaluator):
         try:
 
             # initialize TenSEAL backend using parameters (includes key generation)
+            keygen_start = time.perf_counter()
             backend = self.backend(params, n_threads=self.config.n_threads)
+            cost = {"keygen_seconds": time.perf_counter() - keygen_start}
 
-            errors, runtimes, _ = run_encrypted_inference(
+            if self.config.measure_cost:
+                enc_x = backend.encrypt(np.asarray(self.test_vectors[0]))
+                cost.update({
+                    "eval_key_bytes": backend.evaluation_key_bytes(),
+                    "input_ciphertext_bytes": backend.ciphertext_bytes(enc_x),
+                    "output_ciphertext_bytes": backend.ciphertext_bytes(self.model.forward_encrypted(enc_x)),
+                })
+
+            errors, runtimes, outputs = run_encrypted_inference(
                 backend,
                 self.model,
                 self.test_vectors,
@@ -46,6 +56,9 @@ class TenSEALParameterEvaluator(ParameterEvaluator):
                 status="success",
                 failure_reason="",
                 eval_seconds=time.perf_counter() - start,
+                max_output=max(float(np.max(np.abs(plain))) for _, plain in outputs),
+                encrypted_queries=self.config.warmup_runs + len(runtimes),
+                **cost,
             )
 
         # handle case when encrypted inference fails, stores failure reason

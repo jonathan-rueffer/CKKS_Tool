@@ -1,3 +1,4 @@
+import pytest
 import numpy as np
 import pandas as pd
 
@@ -68,3 +69,15 @@ def test_dominating_configs():
     fastest, most_precise = dominating_configs(cands, baseline_err=1e-5, baseline_runtime=3.0)
     assert fastest["runtime"] == 2.0
     assert most_precise["max_err"] == 1e-6
+
+
+def test_epsilon_indicator():
+    from benchmark_suite.metrics import epsilon_indicator
+
+    ref = _front([(1.0, 1e-6), (2.0, 1e-9)])
+    assert epsilon_indicator(ref, ref) == 1.0
+    # the tool only has a point 10% slower and twice the error of the first reference point
+    tool = _front([(1.1, 2e-6)])
+    # the second reference point (2.0, 1e-9) needs factor max(1.1/2, 2e-6/1e-9) = 2000
+    assert epsilon_indicator(ref, tool) == pytest.approx(2000.0)
+    assert epsilon_indicator(ref, _front([(1.1, 2e-6), (2.0, 1e-9)])) == pytest.approx(2.0)

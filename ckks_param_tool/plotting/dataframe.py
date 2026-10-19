@@ -2,8 +2,9 @@ import pandas as pd
 
 COLUMNS = [
     "poly_degree", "scale", "log_scale", "chain", "chain_sum", "chain_length", "levels",
-    "max_err", "precision_bits", "runtime", "runtime_std", "eval_seconds", "security",
-    "status", "failure_reason",
+    "max_err", "precision_bits", "relative_precision_bits", "runtime", "runtime_std", "eval_seconds", "security",
+    "keygen_seconds", "eval_key_bytes", "input_ciphertext_bytes", "output_ciphertext_bytes",
+    "encrypted_queries", "status", "failure_reason",
 ]
 
 '''
@@ -27,10 +28,16 @@ def results_to_dataframe(results):
             "levels": params.levels,
             "max_err": metrics.error,
             "precision_bits": metrics.precision_bits,
+            "relative_precision_bits": metrics.relative_precision_bits,
             "runtime": metrics.runtime,
             "runtime_std": metrics.runtime_std,
             "eval_seconds": metrics.eval_seconds,
             "security": metrics.security_bits,
+            "keygen_seconds": metrics.keygen_seconds,
+            "eval_key_bytes": metrics.eval_key_bytes,
+            "input_ciphertext_bytes": metrics.input_ciphertext_bytes,
+            "output_ciphertext_bytes": metrics.output_ciphertext_bytes,
+            "encrypted_queries": metrics.encrypted_queries,
             "status": metrics.status,
             "failure_reason": metrics.failure_reason
         })

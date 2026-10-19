@@ -116,14 +116,14 @@ def pareto_recall(reference_front: pd.DataFrame, tool_front: pd.DataFrame) -> fl
     return len(keys(reference_front) & keys(tool_front)) / len(keys(reference_front))
 
 
-# fraction of reference-front points that are epsilon-covered by a tool-front point: some tool
-# point is at most (1 + eps_runtime) times slower and at most eps_log_err decades less accurate.
-# This tolerates differences that are within runtime measurement noise.
+# fraction of reference-front points that are covered by a tool-front point up to measurement
+# noise: some tool point is at most (1 + runtime_tol) times slower and at most precision_tol_bits
+# less precise. The tolerances should match the measured noise (see benchmark_suite/noise.py).
 def epsilon_recall(
     reference_front: pd.DataFrame,
     tool_front: pd.DataFrame,
-    eps_runtime: float = 0.05,
-    eps_log_err: float = 0.1,
+    runtime_tol: float = 0.05,
+    precision_tol_bits: float = 1.5,
 ) -> float:
     if reference_front.empty:
         return float("nan")
@@ -132,12 +132,30 @@ def epsilon_recall(
 
     ref_obj = _objectives(reference_front)
     tool_obj = _objectives(tool_front)
+    eps_log_err = precision_tol_bits * np.log10(2.0)
 
     covered = 0
     for rt, le in ref_obj:
-        if np.any((tool_obj[:, 0] <= rt * (1 + eps_runtime)) & (tool_obj[:, 1] <= le + eps_log_err)):
+        if np.any((tool_obj[:, 0] <= rt * (1 + runtime_tol)) & (tool_obj[:, 1] <= le + eps_log_err)):
             covered += 1
     return covered / len(ref_obj)
+
+
+# multiplicative epsilon-indicator (Zitzler et al., IEEE TEC 2003): the smallest factor eps such
+# that every reference-front point is weakly dominated by some tool-front point whose runtime and
+# error are each multiplied by 1 / eps. eps = 1 means the tool front is as good as the reference
+# front; eps = 1.05 means it is within 5% in both objectives (for error: within log2(1.05) bits).
+def epsilon_indicator(reference_front: pd.DataFrame, tool_front: pd.DataFrame) -> float:
+    if reference_front.empty:
+        return float("nan")
+    if tool_front.empty:
+        return float("inf")
+
+    ref = reference_front[["runtime", "max_err"]].to_numpy(dtype=float)
+    tool = tool_front[["runtime", "max_err"]].to_numpy(dtype=float)
+    # for each reference point b: min over tool points a of max_i a_i / b_i
+    ratios = np.max(tool[None, :, :] / ref[:, None, :], axis=2)
+    return float(np.max(np.min(ratios, axis=1)))
 
 
 # agreement between the errors of the same configurations measured with two kinds of test

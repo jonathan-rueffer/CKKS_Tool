@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from ckks_param_tool.data.registry import HELD_OUT
 from ckks_param_tool.params import SECURITY_LEVELS
 
 from .metrics import (
@@ -21,6 +22,7 @@ from .metrics import (
     pareto_front,
     pareto_recall,
     epsilon_recall,
+    epsilon_indicator,
     hypervolume_ratio,
     error_agreement,
     safe_ratio,
@@ -30,9 +32,9 @@ from .metrics import (
 Analyses benchmark runs produced by `python -m benchmark_suite.run` and writes the summary
 tables (CSV and LaTeX) and figures to <results>/summary/.
 
-Search efficiency (tool vs near-exhaustive "fuller" search)
-    Every tool candidate is also a fuller candidate, so the tool's front is computed from the
-    fuller run's measurements of the tool's candidates ("paired"). The comparison then reflects
+Search efficiency (tool vs broad-grid "broad_grid" search)
+    Every tool candidate is also a broad-grid candidate, so the tool's front is computed from the
+    broad-grid run's measurements of the tool's candidates ("paired"). The comparison then reflects
     the search policy only, not run-to-run timing noise.
 
 Test vectors
@@ -59,11 +61,11 @@ def _run_info(path: Path) -> dict:
 
 
 def search_efficiency(name: str, run: Path) -> list[dict]:
-    if not (run / "fuller").exists():
+    if not (run / "broad_grid").exists():
         return []
 
     tool_all = load_param_search(run / "tool" / "param_search.csv")
-    full_all = load_param_search(run / "fuller" / "param_search.csv")
+    full_all = load_param_search(run / "broad_grid" / "param_search.csv")
     tool = successful(tool_all)
     full = successful(full_all)
 
@@ -71,8 +73,13 @@ def search_efficiency(name: str, run: Path) -> list[dict]:
     missing = len(tool_keys - keys(full_all))
     paired = restrict_to(full, tool_keys)
 
+    with open(run / "tool" / "config.json") as f:
+        evaluation = json.load(f)["evaluation"]
+    runtime_tol = evaluation.get("runtime_tolerance", 0.05)
+    precision_tol = evaluation.get("precision_tolerance_bits", 1.5)
+
     tool_seconds = _run_info(run / "tool")["search_seconds"]
-    full_seconds = _run_info(run / "fuller")["search_seconds"]
+    full_seconds = _run_info(run / "broad_grid")["search_seconds"]
 
     rows = []
     for sec in SECURITY_LEVELS:
@@ -88,21 +95,24 @@ def search_efficiency(name: str, run: Path) -> list[dict]:
 
         rows.append({
             "dataset": name,
+            "held_out": name in HELD_OUT,
             "security": sec,
             "tool_candidates": len(tool_s),
-            "fuller_candidates": len(full_s),
+            "broad_grid_candidates": len(full_s),
             "candidate_reduction": 1 - safe_ratio(len(tool), len(full)),
             "search_time_reduction": 1 - safe_ratio(tool_seconds, full_seconds),
             "pareto_recall": pareto_recall(full_front, paired_front),
-            "epsilon_recall": epsilon_recall(full_front, paired_front),
+            "epsilon_recall": epsilon_recall(full_front, paired_front, runtime_tol, precision_tol),
+            "epsilon_indicator": epsilon_indicator(full_front, paired_front),
             "hypervolume_ratio": hypervolume_ratio(full_front, paired_front),
+            "hypervolume_ratio_no_floor": hypervolume_ratio(full_front, paired_front, runtime_tol=0.0),
             # the same metrics with the tool's own (separately timed) measurements
             "hypervolume_ratio_unpaired": hypervolume_ratio(full_front, tool_front),
             "best_precision_bits_tool": float(paired_s["precision_bits"].max()) if len(paired_s) else np.nan,
-            "best_precision_bits_fuller": float(full_s["precision_bits"].max()),
+            "best_precision_bits_broad_grid": float(full_s["precision_bits"].max()),
             "fastest_runtime_tool": float(paired_s["runtime"].min()) if len(paired_s) else np.nan,
-            "fastest_runtime_fuller": float(full_s["runtime"].min()),
-            "tool_keys_missing_from_fuller": missing,
+            "fastest_runtime_broad_grid": float(full_s["runtime"].min()),
+            "tool_keys_missing_from_broad_grid": missing,
         })
     return rows
 
@@ -127,63 +137,89 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
     with open(run / "baseline.json") as f:
         data = json.load(f)
 
-    base = data["baseline"]
     rows = []
-    for rec in data["tool"]:
-        row = {
-            "dataset": name,
-            "comparison": rec["comparison"],
-            "baseline_N": base["poly_degree"],
-            "baseline_chain": tuple(base["chain"]),
-            "baseline_precision_bits": base["real_rows"]["precision_bits"],
-            "baseline_runtime": base["real_rows"]["runtime"],
-            "baseline_max_relative_error": base["real_rows"].get("max_relative_error"),
-            "baseline_prediction_agreement": base["real_rows"].get("prediction_agreement"),
-            "baseline_overflow_rate": base["real_rows"].get("overflow_rate"),
-            "real_rows": base["real_rows"].get("num_rows"),
-        }
-        if rec["found"]:
-            row.update({
-                "tool_N": rec["poly_degree"],
-                "tool_chain": tuple(rec["chain"]),
-                "tool_security": rec["security"],
-                "tool_precision_bits": rec["real_rows"]["precision_bits"],
-                "tool_runtime": rec["real_rows"]["runtime"],
-                "tool_max_relative_error": rec["real_rows"].get("max_relative_error"),
-                "tool_prediction_agreement": rec["real_rows"].get("prediction_agreement"),
-                "tool_overflow_rate": rec["real_rows"].get("overflow_rate"),
-                # measured on the same real rows
-                "speedup": safe_ratio(base["real_rows"]["runtime"], rec["real_rows"]["runtime"]),
-                "precision_gain_bits": rec["real_rows"]["precision_bits"] - base["real_rows"]["precision_bits"],
-            })
-        rows.append(row)
+    for base in data["baselines"]:
+        real = base["real_rows"]
+        for rec in base["tool"]:
+            row = {
+                "dataset": name,
+                "baseline": base["baseline"],
+                "comparison": rec["comparison"],
+                "baseline_N": base["poly_degree"],
+                "baseline_chain": tuple(base["chain"]),
+                "baseline_status": base["test_vectors"]["status"],
+                "baseline_precision_bits": real["precision_bits"],
+                "baseline_runtime": real["runtime"],
+                "baseline_prediction_agreement": real.get("prediction_agreement"),
+                "baseline_overflow_rate": real.get("overflow_rate"),
+                "real_rows": real.get("num_rows"),
+            }
+            if rec["found"]:
+                tool = rec["real_rows"]
+                row.update({
+                    "tool_N": rec["poly_degree"],
+                    "tool_chain": tuple(rec["chain"]),
+                    "tool_security": rec["security"],
+                    "tool_precision_bits": tool["precision_bits"],
+                    "tool_runtime": tool["runtime"],
+                    "tool_prediction_agreement": tool.get("prediction_agreement"),
+                    "tool_overflow_rate": tool.get("overflow_rate"),
+                    # measured on the same real rows
+                    "speedup": safe_ratio(real["runtime"], tool["runtime"]),
+                    "precision_gain_bits": tool["precision_bits"] - real["precision_bits"],
+                })
+            rows.append(row)
     return rows
 
 
 def recommendations(name: str, run: Path) -> list[dict]:
     info = _run_info(run / "tool")
-    with open(run / "tool" / "recommended_params.json") as f:
-        recs = json.load(f)
+    if not (run / "real_rows.json").exists():
+        return []
+    with open(run / "real_rows.json") as f:
+        points = json.load(f)
+    tv = {(r["poly_degree"], r["scale"], r["chain"]): r for r in successful(load_param_search(run / "tool" / "param_search.csv")).to_dict("records")}
     rows = []
-    for r in recs:
-        for label, point in [("knee", r)] + [(k, r[k]) for k in ("fastest", "most_precise", "fastest_meeting_target") if k in r]:
-            inf = point["inference"]
-            rows.append({
-                "dataset": name,
-                "task": info.get("model_task"),
-                "estimated_required_bits": info.get("estimated_required_bits"),
-                "target_security": r["target_security"],
-                "point": label,
-                "N": point["poly_degree"],
-                "chain": tuple(point["chain"]),
-                "precision_bits": inf["precision_bits"],
-                "runtime": inf["runtime"],
-                "prediction_agreement": inf.get("prediction_agreement"),
-                "max_relative_error": inf.get("max_relative_error"),
-                "overflow_rate": inf.get("overflow_rate"),
-                "real_rows": inf.get("num_rows"),
-            })
+    for p in points:
+        inf = p["real_rows"]
+        test = tv.get((p["poly_degree"], 2 ** p["log_scale"], tuple(p["chain"])), {})
+        rows.append({
+            "dataset": name,
+            "task": info.get("model_task"),
+            "estimated_required_bits": info.get("estimated_required_bits"),
+            "target_security": p["target_security"],
+            "point": p["point"],
+            "N": p["poly_degree"],
+            "chain": tuple(p["chain"]),
+            "precision_bits_test_vectors": test.get("precision_bits"),
+            "precision_bits": inf["precision_bits"],
+            "relative_precision_bits": inf.get("relative_precision_bits"),
+            "runtime": inf["runtime"],
+            "prediction_agreement": inf.get("prediction_agreement"),
+            "max_relative_error": inf.get("max_relative_error"),
+            "overflow_rate": inf.get("overflow_rate"),
+            "real_rows": inf.get("num_rows"),
+        })
     return rows
+
+
+def tuning_cost(name: str, run: Path) -> list[dict]:
+    info = _run_info(run / "tool")
+    cost = info.get("tuning_cost")
+    if not cost:
+        return []
+    mib = 2 ** 20
+    return [{
+        "dataset": name,
+        "held_out": name in HELD_OUT,
+        "candidates": cost["candidates"],
+        "encrypted_queries": cost["encrypted_queries"],
+        "search_seconds": info["search_seconds"],
+        "keygen_seconds": cost["keygen_seconds"],
+        "eval_keys_MiB": cost["eval_key_bytes"] / mib,
+        "ciphertexts_MiB": cost["ciphertext_bytes"] / mib,
+        "total_upload_download_MiB": (cost["eval_key_bytes"] + cost["ciphertext_bytes"]) / mib,
+    }]
 
 
 def plot_test_vectors(name: str, run: Path, out: Path):
@@ -210,19 +246,19 @@ def plot_test_vectors(name: str, run: Path, out: Path):
 
 
 def plot_fronts(name: str, run: Path, out: Path, sec: int = 128):
-    if not (run / "fuller").exists():
+    if not (run / "broad_grid").exists():
         return
-    full = at_least(successful(load_param_search(run / "fuller" / "param_search.csv")), sec)
+    full = at_least(successful(load_param_search(run / "broad_grid" / "param_search.csv")), sec)
     tool = successful(load_param_search(run / "tool" / "param_search.csv"))
     paired = restrict_to(full, keys(tool))
     if full.empty:
         return
 
     fig, ax = plt.subplots(figsize=(6, 4.5))
-    ax.scatter(full["max_err"], full["runtime"], color="lightgray", s=15, label="fuller candidates")
+    ax.scatter(full["max_err"], full["runtime"], color="lightgray", s=15, label="broad-grid candidates")
     ax.scatter(paired["max_err"], paired["runtime"], color="tab:blue", s=15, alpha=0.5, label="tool candidates")
     ff, tf = pareto_front(full), pareto_front(paired)
-    ax.scatter(ff["max_err"], ff["runtime"], facecolors="none", edgecolors="black", s=70, label="fuller front")
+    ax.scatter(ff["max_err"], ff["runtime"], facecolors="none", edgecolors="black", s=70, label="broad-grid front")
     ax.scatter(tf["max_err"], tf["runtime"], marker="x", color="tab:red", s=50, label="tool front")
     ax.set_xscale("log")
     ax.set_xlabel("Maximum absolute error")
@@ -250,7 +286,7 @@ def main(argv=None):
     out = args.results / "summary"
     out.mkdir(parents=True, exist_ok=True)
 
-    efficiency, vectors, baseline, recs = [], [], [], []
+    efficiency, vectors, baseline, recs, quality, costs = [], [], [], [], [], []
     for dataset_dir in sorted(p for p in args.results.iterdir() if p.is_dir() and p.name != "summary"):
         run = latest_run(dataset_dir)
         if run is None:
@@ -262,11 +298,15 @@ def main(argv=None):
         vectors += test_vector_agreement(name, run)
         baseline += baseline_comparison(name, run)
         recs += recommendations(name, run)
+        costs += tuning_cost(name, run)
+        if (run / "model_quality.json").exists():
+            with open(run / "model_quality.json") as f:
+                quality.append({"dataset": name, **json.load(f)})
         plot_test_vectors(name, run, out)
         plot_fronts(name, run, out)
 
     for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline"),
-                       (recs, "recommendations")):
+                       (recs, "recommendations"), (quality, "model_quality"), (costs, "tuning_cost")):
         if rows:
             df = pd.DataFrame(rows)
             _write(df, out, stem)

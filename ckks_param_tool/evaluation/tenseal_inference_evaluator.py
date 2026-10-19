@@ -36,7 +36,8 @@ def task_metrics(task: str, outputs) -> dict:
         for dec, plain in outputs
     ]))
     return {"max_relative_error": max(rel), "prediction_agreement": agreement,
-            "overflow_rate": overflow, "num_rows": len(outputs)}
+            "overflow_rate": overflow, "num_rows": len(outputs),
+            "max_output": max(float(np.max(np.abs(plain))) for _, plain in outputs)}
 
 
 class TenSEALInferenceEvaluator(InferenceEvaluator):

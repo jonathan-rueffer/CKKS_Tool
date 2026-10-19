@@ -240,11 +240,11 @@ class CKKSSearchPolicy:
             special_primes="all",
         )
 
-    # produces a near-exhaustive policy, used to compare the tool against a broad search. Its
+    # produces a broad-grid policy, used to compare the tool against a broad search. Its
     # scales do not depend on the data: every multiple of 5 bits from 2^20 up to the largest
-    # feasible scale. Every candidate of `default` is also a candidate of `fuller` (see tests).
+    # feasible scale. Every candidate of `default` is also a candidate of `broad_grid` (see tests).
     @classmethod
-    def fuller(cls) -> "CKKSSearchPolicy":
+    def broad_grid(cls) -> "CKKSSearchPolicy":
         return cls(
             num_scale_options=0,
             scale_step=5,
@@ -256,7 +256,7 @@ class CKKSSearchPolicy:
             step_down_bits=0, # every scale is already evaluated
         )
 
-    PROFILES = ("default", "fast", "full", "fuller", "custom")
+    PROFILES = ("default", "fast", "full", "broad_grid", "custom")
 
     # builds a policy from a SearchPolicyConfig: the named profile is the starting point and
     # every field set in the config (not None) overrides it
@@ -267,7 +267,7 @@ class CKKSSearchPolicy:
             "custom": cls.default,
             "fast": cls.fast,
             "full": cls.full,
-            "fuller": cls.fuller,
+            "broad_grid": cls.broad_grid,
         }
         policy = presets[config.profile]()
 

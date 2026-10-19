@@ -26,6 +26,17 @@ class TenSEALBackend(CKKSBackend):
         ctx.generate_galois_keys() # rotations are needed for dot products and matmuls
         return ctx
 
+    # bytes the client sends the service so it can evaluate: the public context with the public,
+    # relinearization and Galois keys, never the secret key
+    def evaluation_key_bytes(self) -> int:
+        return len(self.context.serialize(
+            save_public_key=True, save_secret_key=False, save_galois_keys=True, save_relin_keys=True
+        ))
+
+    @staticmethod
+    def ciphertext_bytes(enc_vector) -> int:
+        return len(enc_vector.serialize())
+
     def encrypt(self, vector):
         return ts.ckks_vector(self.context, vector)
 

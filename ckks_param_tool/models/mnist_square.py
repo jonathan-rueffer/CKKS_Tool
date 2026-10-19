@@ -1,6 +1,7 @@
 import logging
 
 import numpy as np
+import tenseal as ts
 import torch
 import torch.nn as nn
 import torch.optim as optim
@@ -55,17 +56,22 @@ def build_wrapped_mnist_model(model):
 
         return logits
 
+    # In TenSEAL, adding a plaintext vector to a matmul result also writes into the slots beyond
+    # the result, and a following matmul's rotations pull those values in (errors of order 1).
+    # Biases that are followed by another matmul are therefore added as encrypted vectors, whose
+    # unused slots are zero. The last bias is followed by no matmul and can stay plaintext.
     def encrypted_forward_fn(x_enc):
+        context = x_enc.context()
 
         # layer 1
         z1 = x_enc.matmul(W1)
-        z1 = z1 + b1
+        z1 = z1 + ts.ckks_vector(context, b1.tolist())
 
         z1.square_()
 
         # layer 2
         z2 = z1.matmul(W2)
-        z2 = z2 + b2
+        z2 = z2 + ts.ckks_vector(context, b2.tolist())
 
         z2.square_()
 
@@ -84,42 +90,39 @@ def build_wrapped_mnist_model(model):
         task="multiclass",
     )
 
-def train_mnist_model(X, y):
+# trains the network with mini-batch Adam. Square activations can make gradients explode, so
+# the gradient norm is clipped. Seeded for reproducibility.
+def train_mnist_model(X, y, epochs: int = 10, batch_size: int = 128, lr: float = 1e-3, seed: int = 0):
 
     X = np.asarray(X, dtype=np.float32)
     y = np.asarray(y)
 
-    X_tensor = torch.tensor(X)
-    y_tensor = torch.tensor(y, dtype=torch.long)
+    torch.manual_seed(seed)
+    generator = torch.Generator().manual_seed(seed)
+
+    dataset = torch.utils.data.TensorDataset(torch.tensor(X), torch.tensor(y, dtype=torch.long))
+    loader = torch.utils.data.DataLoader(dataset, batch_size=batch_size, shuffle=True, generator=generator)
 
     model = SquareNet()
-
-    optimizer = optim.Adam(
-        model.parameters(),
-        lr=1e-3
-    )
-
+    optimizer = optim.Adam(model.parameters(), lr=lr)
     criterion = nn.CrossEntropyLoss()
 
     model.train()
-
-    epochs = 10
-
     for epoch in range(epochs):
+        total, correct, loss_sum = 0, 0, 0.0
+        for xb, yb in loader:
+            optimizer.zero_grad()
+            logits = model(xb)
+            loss = criterion(logits, yb)
+            loss.backward()
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
 
-        optimizer.zero_grad()
+            loss_sum += loss.item() * len(yb)
+            correct += (logits.argmax(dim=1) == yb).sum().item()
+            total += len(yb)
 
-        logits = model(X_tensor)
+        logger.info("epoch %d/%d loss=%.4f train accuracy=%.4f", epoch + 1, epochs, loss_sum / total, correct / total)
 
-        loss = criterion(
-            logits,
-            y_tensor
-        )
-
-        loss.backward()
-
-        optimizer.step()
-
-        logger.info("epoch %d/%d loss=%.4f", epoch + 1, epochs, loss.item())
-
+    model.eval()
     return build_wrapped_mnist_model(model)

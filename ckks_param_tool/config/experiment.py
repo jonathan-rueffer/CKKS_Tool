@@ -6,7 +6,7 @@ This file contains the tool configurations that can be controlled by a user.
 '''
 
 SAMPLING_METHODS = {"truncated_normal", "gaussian", "uniform", "student_t"}
-SEARCH_PROFILES = {"default", "fast", "full", "fuller", "custom"}
+SEARCH_PROFILES = {"default", "fast", "full", "broad_grid", "custom"}
 
 
 # configurations relating to the data input and procession stage.
@@ -57,13 +57,22 @@ class DataConfig:
 
 @dataclass(frozen=True)
 class EvaluationConfig:
-    num_samples: int = 100 # real dataset entries used to evaluate the recommendations (0 = all)
+    num_samples: int = 100 # benchmark validation only: real rows per configuration (0 = all)
     warmup_runs: int = 1 # untimed encrypted inferences run before timing each candidate
     timing_repeats: int = 1 # timed passes over the test vectors per candidate
     n_threads: Optional[int] = None # TenSEAL worker threads (None = all cores)
     random_state: Optional[int] = 42 # random state for selecting the real dataset entries
     # the recommended point per security level: "knee", "fastest" or "most_accurate"
     recommendation: str = "knee"
+    # differences below these count as measurement noise when points are compared: relative
+    # runtime, and precision in bits (see benchmark_suite/noise.py for how to measure them)
+    runtime_tolerance: float = 0.05
+    precision_tolerance_bits: float = 1.5 # 2x the largest std measured by benchmark_suite/noise.py
+    # reported points (knee, endpoints) must reach this precision; error >= 1 is rarely usable
+    min_precision_bits: float = 0.0
+    # record the cost of evaluating a candidate remotely: key generation time, serialized size
+    # of the evaluation keys and of an input / output ciphertext (serialization takes time)
+    measure_cost: bool = True
 
     def to_dict(self):
         return asdict(self)
@@ -71,6 +80,8 @@ class EvaluationConfig:
     def __post_init__(self):
         if self.num_samples < 0:
             raise ValueError("evaluation.num_samples must be >= 0 (0 = all rows)")
+        if self.runtime_tolerance < 0 or self.precision_tolerance_bits < 0:
+            raise ValueError("evaluation tolerances must be >= 0")
         if self.recommendation not in ("knee", "fastest", "most_accurate"):
             raise ValueError("evaluation.recommendation must be knee, fastest or most_accurate")
         if self.warmup_runs < 0:

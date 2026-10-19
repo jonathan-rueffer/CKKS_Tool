@@ -10,12 +10,12 @@ The tool analyzes the dataset and the model, generates and evaluates candidate p
 
 Homomorphic encryption enables secure outsourced computation, but choosing CKKS parameters requires expert knowledge. The tool:
 
-- works from a **data descriptor** (per-feature mean, standard deviation, minimum, maximum and resolution) and the model; the client can compute the descriptor locally and share it instead of any record;
-- bounds the model's outputs from the descriptor and takes the model's multiplicative depth as a workload constraint;
+- is run by the **client**, on a **data descriptor** (per-feature mean, standard deviation, minimum, maximum and resolution) that it computes locally, so no record enters the tool;
+- treats the service's model as a black box with a known multiplicative depth, and bounds its outputs from the descriptor;
 - generates a workload-specific search space of parameter sets `(N, Δ, Q)` that the library can instantiate;
 - evaluates every candidate with encrypted inference on representative (synthetic) test vectors;
 - computes, for each security target (128, 192, 256 bits), the Pareto front of runtime against error over every configuration that is **at least** that secure, and reports its two endpoints (fastest, most precise) and its knee point as a starting point (runtimes within 5% of each other count as equal, so a noise-level speed difference never costs precision);
-- if the raw data is available, re-evaluates these configurations on real rows (error, prediction agreement, overflowing rows).
+- in the benchmark only, validates these configurations on real rows (error, prediction agreement, overflowing rows).
 
 ## How parameters are generated
 
@@ -41,11 +41,24 @@ Chains that SEAL cannot build (a prime size outside 2–60 bits, or not enough p
 
 **Precision a classifier needs (information only).** A prediction flips when the error reaches the decision margin (`|logit|` for binary models, half the gap between the two largest logits otherwise). From the margins on the descriptor samples the tool estimates the precision that keeps 99% of predictions unchanged (`data.margin_quantile`) and reports it and draws it in the plots; it does not change the recommendations.
 
+## Threat model
+
+The tool is a subroutine of the **client's** interaction with a machine-learning service:
+
+1. The client computes the descriptor of its data locally. The raw data never enters the tool.
+2. The tool draws synthetic vectors from the descriptor and uses the service's model as a black box with a known multiplicative depth: it queries the model **in plaintext on synthetic vectors** (reference outputs, output size, decision margins) and **on ciphertexts** (the service evaluates its model homomorphically under each candidate's parameters; the client decrypts).
+3. The client uses the chosen parameters for its real, encrypted requests.
+
+Assumptions and consequences:
+
+- The service answers plaintext queries on synthetic vectors. Those vectors reveal the client's per-feature statistics (the descriptor) to the service, but no record.
+- Decrypted results stay with the client. Returning decrypted CKKS outputs to an untrusted party enables key-recovery attacks (Li & Micciancio, EUROCRYPT 2021).
+- In this implementation both kinds of query are simulated locally, so runtimes are the service's computation (plus encryption and decryption); network and serialization costs come on top in a deployment.
+- The descriptor treats features independently. For tabular data this is a good approximation; for structured inputs such as images it is not (see the benchmark results for MNIST).
+
 ## Security model
 
 Security levels are assigned from the Homomorphic Encryption Standard tables as implemented in Microsoft SEAL (`hestdparms.h`): a ternary secret key, error standard deviation 3.2, and a classical attacker. The bound is the total size of the chain, special prime included. TenSEAL only enforces the 128-bit budget itself; the 192- and 256-bit labels are assigned by the tool. For newer guidance see Bossuat et al., *Security Guidelines for Implementing Homomorphic Encryption* (IACR CiC 2024).
-
-The tool decrypts results to measure error. In a deployment, decrypted CKKS outputs must not be returned to an untrusted party without countermeasures (Li & Micciancio, EUROCRYPT 2021).
 
 ---
 
@@ -63,7 +76,7 @@ ckks_param_tool/
 ├── plotting/      # Visualization utilities
 ├── search/        # Search policies, search space, Pareto selection, baseline
 └── cli.py         # Command line interface
-benchmark_suite/   # Benchmarks: tool vs near-exhaustive search, test vectors, baseline
+benchmark_suite/   # Benchmarks: tool vs reference grid, test vectors, baselines, noise
 tests/             # Unit and end-to-end tests
 legacy/            # Prototype scripts and the June 2026 results (pre-0.2, not reproducible with this version)
 reproduce.py       # Re-creates all benchmark tables and figures
@@ -104,12 +117,11 @@ X_client, X_server, y_client, y_server = client_server_split(X, y)
 # Train model on server-side data
 model = train_linear_regression_model(X_server, y_server)
 
-# Initialize experiment (config is optional: a dict, a JSON path, or an ExperimentConfig)
-experiment = Experiment(X_client, model, config={"search": {"profile": "default"}})
+# The client computes its descriptor locally; only the descriptor enters the tool
+descriptor = DataDescriptor.from_data(X_client)
 
-# ...or without any record: the client shares only its descriptor
-# descriptor = DataDescriptor.from_data(X_client); descriptor.save("descriptor.json")
-# experiment = Experiment(DataDescriptor.load("descriptor.json"), model)
+# Initialize experiment (config is optional: a dict, a JSON path, or an ExperimentConfig)
+experiment = Experiment(descriptor, model, config={"search": {"profile": "default"}})
 
 # Run parameter selection and evaluation
 experiment.run(verbose=True)
@@ -124,7 +136,7 @@ From the command line, for a built-in workload:
 ckks-param-tool run --dataset diabetes --profile default --output results
 ```
 
-With a descriptor only, the results are reported on the test vectors. Each saved run contains `config.json`, `descriptor.json` (all the tool knew about the data), `param_search.csv` (every evaluated candidate, step-downs included), `infeasible.csv`, `recommended_params.json`, `run_info.json` (precision estimates, search time, number of step-downs, git commit, software and hardware environment) and `plots/`.
+All results are measured on the test vectors. Each saved run contains `config.json`, `descriptor.json` (all the tool knew about the data), `param_search.csv` (every evaluated candidate, step-downs included), `infeasible.csv`, `recommended_params.json`, `run_info.json` (precision estimates, search time, number of step-downs, git commit, software and hardware environment) and `plots/`.
 
 ### Configuration
 
@@ -138,16 +150,22 @@ With a descriptor only, the results are reported on the test vectors. Each saved
 | | `output_margin_bits` | 3 | safety bits added to the output bound that sizes `q0` |
 | | `margin_quantile` | 0.01 | classifiers: estimated precision keeps `1 - q` of predictions |
 | | `random_state` | 42 | seed |
-| `evaluation` | `num_samples` | 100 | real rows used to evaluate the reported configurations (0 = all) |
+| `evaluation` | `num_samples` | 100 | benchmark validation only: real rows per configuration (0 = all) |
 | | `recommendation` | `knee` | recommended point per level: `knee`, `fastest` or `most_accurate` |
 | | `warmup_runs` | 1 | untimed inferences before timing a candidate |
 | | `timing_repeats` | 1 | timed passes over the inputs |
 | | `n_threads` | `None` | TenSEAL threads (`None` = all cores) |
-| `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (grid of 4 scales, `q0` offsets, every special prime size, one spare level), `fuller` (near-exhaustive) or `custom` |
+| `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (grid of 4 scales, `q0` offsets, every special prime size, one spare level), `broad_grid` (the benchmark's reference grid, see below) or `custom` |
 | | `poly_degrees`, `num_scale_options` (grid scales above the lower bound; 1 = only the lower bound, 0 = no limit), `scale_step`, `base_scale_buffer`, `min_scale_bits`, `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
+| | `runtime_tolerance` | 0.05 | runtimes within this relative difference count as equal (knee, endpoints, ε-recall) |
+| | `precision_tolerance_bits` | 1.5 | precisions within this many bits count as equal ("most precise" endpoint, ε-recall); twice the largest standard deviation measured by `benchmark_suite.noise` |
+| | `min_precision_bits` | 0 | reported points (knee, endpoints) must reach this precision |
+| | `measure_cost` | `true` | record key generation time and serialized key / ciphertext sizes per candidate |
 | `plotting` | `error_tol` | `None` | hide candidates above this error in plots |
 
-Runtime is the median wall-clock time of one encrypted inference (encrypt, evaluate, decrypt); key generation is excluded. Error is the worst-case absolute difference to the plaintext model; precision is `-log2(error)`. A candidate whose error is at least the largest output magnitude is reported as a failure ("no precision left").
+**Metrics.** Runtime is the median wall-clock latency of one encrypted inference (encrypt, evaluate, decrypt); key generation is excluded and reported separately. Error is the worst-case absolute difference to the plaintext model over every output slot and test vector; precision is `-log2(error)`, and *relative precision* is `-log2(error / max|output|)`, which is comparable across workloads with outputs of different sizes. A candidate whose error is at least the largest output magnitude is reported as a failure ("no precision left").
+
+**Tuning cost.** Each candidate needs its own keys, which a client would send to the service, and several encrypted queries. For every candidate the tool records the key generation time, the serialized size of the public context with the relinearization and Galois keys (never the secret key), and the size of one input and one output ciphertext; `run_info.json` sums them over the search. For example, the evaluation keys alone are about 19 MiB at `N=8192` and about 540 MiB at `N=32768` with 7 primes.
 
 The knee recommendation is only a starting point: the tool's output is the trade-off itself, i.e. the evaluated candidates, the Pareto front for each security level and its endpoints.
 
@@ -156,14 +174,28 @@ The knee recommendation is only a starting point: the tool's output is the trade
 ```bash
 python reproduce.py                        # all workloads; MNIST takes several hours
 python reproduce.py --datasets iris wine   # a subset
-python reproduce.py --no-fuller            # skip the near-exhaustive comparison
+python reproduce.py --no-broad-grid        # skip the reference-grid comparison
 ```
 
-For every workload this runs the tool, the near-exhaustive `fuller` search (every scale from 2^20 to the largest feasible one in 5-bit steps, independent of the data, up to 4 spare levels and 6 sizes of q0), the tool's candidates with random dataset rows and with dataset-agnostic vectors, and the tutorial-default baseline (`N=8192`, `[60, 40, 40, 60]`, `Δ=2^40`). `results/summary/` then contains:
+For every workload this runs the tool, a broad reference grid (`broad_grid`), the tool's candidates with random dataset rows and with dataset-agnostic vectors, and two baselines. `results/summary/` then contains the tables below (CSV and LaTeX) and figures.
 
-- `search_efficiency` — candidate and search-time reduction, Pareto recall, ε-recall and normalized hypervolume ratio per security level. The tool's front is computed from the `fuller` run's measurements of the tool's own candidates (every tool candidate is also a `fuller` candidate), so the comparison is not affected by run-to-run timing noise. Recall counts the reference-front parameter sets the tool also contains; ε-recall counts a reference point as found if the tool has one at most 5% slower and at most 0.1 decades less accurate. Hypervolume is computed on (runtime, log10 error), normalized by the reference front, with the runtime axis spanning at least 5% of the fastest runtime so that noise-level differences on flat fronts are not amplified.
+**Workloads.** Eight datasets were used while the candidate-generation rules were developed: diabetes, california housing, concrete (regression), breast cancer, heart disease, ionosphere (binary), wine, iris (3 classes), plus MNIST with a depth-5 square-activation network. Three **held-out** datasets were not used during development and measure how the rules generalize: credit default (binary, 23 numeric features with values up to about 10^6), bank marketing (binary, categorical features one-hot encoded) and wine quality (regression). Tables mark them with `held_out`.
+
+**Reference grid.** `broad_grid` is a broad but finite grid, not an exhaustive search: every scale from 2^20 to the largest feasible one in 5-bit steps (independent of the data), `q0` from its minimum in steps of 10 up to +50 bits, every special prime size in steps of 10, 0 to 4 spare levels, and `N` in {8192, 16384, 32768}. It uses the same `q0` rule as the tool. Every tool candidate is also a grid candidate (tested).
+
+**Baselines.** *Tutorial defaults*, what a non-expert copies from the TenSEAL / SEAL examples (`N=8192`, `[60, 40, 40, 60]`, `Δ=2^40`); and *expert defaults*, the rule of thumb of OpenFHE's examples (60-bit first prime, 50-bit scaling primes without spare levels, 60-bit special prime, the smallest `N` whose 128-bit budget fits).
+
+**Real rows.** Reported configurations and baselines are validated on the client's real rows (all of them up to 5,000, a seeded random subset beyond that; 200 for MNIST).
+
+- `search_efficiency` — per security level: candidate and search-time reduction, exact Pareto recall, ε-recall, the multiplicative ε-indicator, and the normalized hypervolume ratio with and without the runtime floor. The tool's front is computed from the grid run's measurements of the tool's own candidates, so the comparison is not affected by run-to-run timing noise.
+  - *Pareto recall*: the share of the grid front's parameter sets (`N`, `Δ`, `Q`) that the tool also evaluated.
+  - *ε-recall*: the share of grid-front points for which the tool has one at most `runtime_tolerance` slower and at most `precision_tolerance_bits` less precise.
+  - *ε-indicator* (Zitzler et al. 2003): the smallest factor by which the tool front's runtimes and errors must be divided to weakly dominate the whole grid front; 1 is perfect.
+  - *Hypervolume ratio*: on (runtime, log10 error), normalized by the grid front's ideal and nadir points, reference point at 1.1. The runtime axis spans at least `runtime_tolerance` of the fastest runtime so that noise-level differences on flat fronts are not amplified; `hypervolume_ratio_no_floor` omits that.
 - `test_vectors` — Spearman correlation, Pearson correlation and R² on log error, and coverage (how often the estimate is at least the real error) for representative and naive vectors against random rows.
-- `recommendations` — the knee point and the front's endpoints per security level, measured on all client rows (200 for MNIST): precision, runtime, prediction agreement, relative error and overflow rate.
-- `baseline` — the tutorial defaults against every configuration the tool evaluated: the fastest one at least as precise, and the most precise one at least as fast. The baseline is measured with the same test vectors, and both sides are re-measured on the same real rows.
+- `recommendations` — the knee point and the front's endpoints per security level: precision on the test vectors and on real rows (absolute and relative), runtime, prediction agreement, relative error and overflow rate.
+- `baseline` — each baseline against every configuration the tool evaluated: the fastest one at least as precise, and the most precise one at least as fast, measured on the same real rows.
+- `tuning_cost` — candidates, encrypted queries, search and key generation time, and the data a client would exchange with the service (evaluation keys and ciphertexts).
+- `model_quality` — plaintext accuracy or R² of each model on the client split.
 
-On flat fronts (all candidates with the same `N` and chain length) runtime differences are mostly measurement noise, so repeated timing (`evaluation.timing_repeats`) makes the search-efficiency numbers more stable.
+**Measurement noise.** `python -m benchmark_suite.noise --datasets ... --repeats 5` measures the configurations the tool reports several times, each with new keys and encryption noise, and suggests `runtime_tolerance` and `precision_tolerance_bits` as twice the largest observed coefficient of variation and standard deviation. On four datasets the runtime varied by at most 0.8% and the precision by up to 0.76 bits, since the error is a maximum over 10 random test vectors.

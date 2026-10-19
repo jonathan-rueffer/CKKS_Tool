@@ -29,15 +29,9 @@ def print_experiment_summary(results):
         metrics.add_column(style="dim")
         metrics.add_column(style="bold")
 
-        metrics.add_row("Inference error", f"{inference.error:.4e}")
+        metrics.add_row("Error (test vectors)", f"{inference.error:.4e}")
         metrics.add_row("Precision (bits)", f"{inference.precision_bits:.1f}")
         metrics.add_row("Median runtime (s)", f"{inference.runtime:.4f}")
-        metrics.add_row("Max. relative error", f"{inference.max_relative_error:.2e}")
-        if inference.prediction_agreement is not None:
-            metrics.add_row("Prediction agreement", f"{inference.prediction_agreement:.1%}")
-        if inference.num_rows:
-            metrics.add_row("Rows that overflowed", f"{inference.overflow_rate:.1%} of {inference.num_rows}")
-        metrics.add_row("Measured on", "real rows" if inference.num_rows else inference.status)
 
         console.print(Panel(table, title="Parameter Selection"))
         console.print(Panel(metrics, title="Encrypted Inference"))

@@ -50,9 +50,12 @@ def fastest_point(front: pd.DataFrame, runtime_tol: float = 0.05) -> pd.Series:
     return near.loc[near["max_err"].idxmin()]
 
 
-# the most precise front point
-def most_precise_point(front: pd.DataFrame) -> pd.Series:
-    return front.loc[front["max_err"].idxmin()]
+# the most precise front point; points at most precision_tol_bits less precise count as equally
+# precise, and the fastest of them is returned
+def most_precise_point(front: pd.DataFrame, precision_tol_bits: float = 1.5) -> pd.Series:
+    bits = _bits(front)
+    near = front[bits >= bits.max() - precision_tol_bits]
+    return near.loc[near["runtime"].idxmin()]
 
 
 # the fastest front point whose precision (-log2 error) is at least required_bits (with the
@@ -76,6 +79,7 @@ def select_representative_pareto(
     pareto_df: pd.DataFrame,
     policy: str = "knee",
     runtime_tol: float = 0.05,
+    precision_tol_bits: float = 1.5,
 ) -> pd.Series:
 
     if len(pareto_df) == 1:
@@ -85,7 +89,7 @@ def select_representative_pareto(
         return fastest_point(pareto_df, runtime_tol)
 
     if policy == "most_accurate":
-        return most_precise_point(pareto_df)
+        return most_precise_point(pareto_df, precision_tol_bits)
 
     if policy != "knee":
         raise ValueError(f"Unknown recommendation policy '{policy}'")

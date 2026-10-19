@@ -8,6 +8,9 @@ from .loaders import (
     load_ionosphere_data,
     load_heart_disease_data,
     load_mnist_data,
+    load_credit_default_data,
+    load_bank_marketing_data,
+    load_wine_quality_data,
 )
 
 '''
@@ -37,4 +40,10 @@ DATASETS = {
     "ionosphere": (load_ionosphere_data, _logistic, "classification"),
     "iris": (load_iris_data, _logistic, "classification"),
     "mnist": (load_mnist_data, _mnist, "classification"),
+    # held-out: not used while the heuristics were developed
+    "credit_default": (load_credit_default_data, _logistic, "classification"),
+    "bank_marketing": (load_bank_marketing_data, _logistic, "classification"),
+    "wine_quality": (load_wine_quality_data, _linear, "regression"),
 }
+
+HELD_OUT = {"credit_default", "bank_marketing", "wine_quality"}
