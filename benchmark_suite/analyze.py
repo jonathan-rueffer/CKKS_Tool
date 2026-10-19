@@ -222,6 +222,27 @@ def tuning_cost(name: str, run: Path) -> list[dict]:
     }]
 
 
+def dp_robustness(name: str, run: Path) -> list[dict]:
+    if not (run / "dp.json").exists():
+        return []
+    with open(run / "dp.json") as f:
+        rows = json.load(f)
+    return [{
+        "dataset": name,
+        "epsilon": r["epsilon"],
+        "target_security": r["target_security"],
+        "output_int_bits": r["output_int_bits"],
+        "output_int_bits_non_dp": r["output_int_bits_non_dp"],
+        "N": r["poly_degree"],
+        "chain": tuple(r["chain"]),
+        "same_as_non_dp": r["same_as_non_dp"],
+        "same_class_as_non_dp": r.get("same_class_as_non_dp"),
+        "precision_bits": r["real_rows"]["precision_bits"],
+        "prediction_agreement": r["real_rows"].get("prediction_agreement"),
+        "overflow_rate": r["real_rows"].get("overflow_rate"),
+    } for r in rows]
+
+
 def plot_test_vectors(name: str, run: Path, out: Path):
     rep = successful(load_param_search(run / "tool" / "param_search.csv"))
     truth = successful(load_param_search(run / "test_vectors" / "random_rows.csv"))
@@ -286,7 +307,7 @@ def main(argv=None):
     out = args.results / "summary"
     out.mkdir(parents=True, exist_ok=True)
 
-    efficiency, vectors, baseline, recs, quality, costs = [], [], [], [], [], []
+    efficiency, vectors, baseline, recs, quality, costs, dp = [], [], [], [], [], [], []
     for dataset_dir in sorted(p for p in args.results.iterdir() if p.is_dir() and p.name != "summary"):
         run = latest_run(dataset_dir)
         if run is None:
@@ -299,6 +320,7 @@ def main(argv=None):
         baseline += baseline_comparison(name, run)
         recs += recommendations(name, run)
         costs += tuning_cost(name, run)
+        dp += dp_robustness(name, run)
         if (run / "model_quality.json").exists():
             with open(run / "model_quality.json") as f:
                 quality.append({"dataset": name, **json.load(f)})
@@ -306,7 +328,8 @@ def main(argv=None):
         plot_fronts(name, run, out)
 
     for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline"),
-                       (recs, "recommendations"), (quality, "model_quality"), (costs, "tuning_cost")):
+                       (recs, "recommendations"), (quality, "model_quality"), (costs, "tuning_cost"),
+                       (dp, "dp_robustness")):
         if rows:
             df = pd.DataFrame(rows)
             _write(df, out, stem)

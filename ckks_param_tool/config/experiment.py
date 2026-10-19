@@ -12,7 +12,7 @@ SEARCH_PROFILES = {"default", "fast", "full", "broad_grid", "custom"}
 # configurations relating to the data input and procession stage.
 @dataclass(frozen=True)
 class DataConfig:
-    num_samples: int = 10 # number of representative test vectors to use
+    num_samples: int = 50 # representative test vectors encrypted per candidate (more = less noise)
     method: str = "truncated_normal" # test vector generation strategy
     rounding: Optional[int] = None # optional rounding of the generated test vectors
     random_state: Optional[int] = 42 # random state for reproducibility
@@ -121,6 +121,8 @@ class SearchPolicyConfig:
     budget_extra_levels: Optional[tuple[int, ...]] = None
     extra_levels: Optional[tuple[int, ...]] = None
     q0_deltas: Optional[tuple[int, ...]] = None
+    q0_rounding: Optional[tuple[str, ...]] = None
+    two_prime_q0: Optional[bool] = None
     max_qL: Optional[int] = None
     special_primes: Optional[str] = None
     step_down_bits: Optional[int] = None
@@ -134,7 +136,7 @@ class SearchPolicyConfig:
             raise ValueError(f"search.profile must be one of {sorted(SEARCH_PROFILES)}")
 
         # JSON gives lists; store tuples so the config stays hashable
-        for name in ("poly_degrees", "extra_levels", "budget_extra_levels", "q0_deltas"):
+        for name in ("poly_degrees", "extra_levels", "budget_extra_levels", "q0_deltas", "q0_rounding"):
             value = getattr(self, name)
             if isinstance(value, list):
                 object.__setattr__(self, name, tuple(value))

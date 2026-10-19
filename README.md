@@ -24,12 +24,14 @@ Chains follow the SEAL / TenSEAL structure `(q0, q1, …, qL, special)`:
 | Component | Rule |
 |---|---|
 | `q1 … qL` | one prime per rescale, sized like the scale `Δ`. TenSEAL rescales after **every** multiplication (ciphertext-plaintext included), so a model of depth `L` needs exactly `L` of them. |
-| `q0` | holds the output after the last rescale: `log2 q0 ≥ log2 Δ + b_out + 1` (rounded up to a multiple of 10). `b_out` is the integer bits of the largest plaintext output on 10,000 samples drawn from the descriptor plus its stress vectors (each feature at its minimum or maximum, the others at their mean), plus a 3-bit safety margin (`data.output_margin_bits`). Only this minimum is used: extra bits in `q0` add headroom, not precision. |
-| special prime | key-switching prime, at least as large as every other prime. Two sizes are tried: the smallest valid one (cheapest in the security budget) and 60 bits (least key-switching noise). |
+| final modulus | holds the output after the last rescale: at least `log2 Δ + b_out + 1` bits. It is a single prime `q0` sized exactly for that, or, when one prime cannot hold it (every prime is at most 60 bits), two primes `(q0, 60)`. `b_out` is the integer bits of the largest plaintext output on 10,000 samples drawn from the descriptor plus its stress vectors (each feature at its minimum or maximum, the others at their mean), plus a 3-bit safety margin (`data.output_margin_bits`). Only this minimum is used, not rounded: extra bits add headroom, not precision, and at the high security levels every unused bit of the budget is precision lost. |
+| special prime | key-switching prime, at least as large as every other prime. Two sizes are tried: the smallest valid one, sized exactly (cheapest in the security budget), and 60 bits (least key-switching noise). |
 | scale `Δ` | for each `N` and security level, the largest scale (multiple of 5 bits, at least 2^20) whose smallest valid chain fits that level's budget at this `N` (the *budget scales*), also tried with one spare level. A precision target (`data.target_precision_bits`) raises the lowest scale considered. |
 | `N` | every supported ring dimension whose 128-bit budget fits the chain. |
 
 **Why only these scales.** Every prime takes one 64-bit word in the RNS representation, so runtime depends on `N` and the number of primes but hardly on the scale: for a given `N` and chain length a larger scale gives more precision at the same cost. Each `(N, chain length)` therefore has one Pareto-optimal configuration, the largest scale that works, and that is what the budget scales target. Together they cover both ends of the trade-off: the budget scale of a small `N` at a high security level is the cheap, less precise option, that of a larger `N` the precise one.
+
+**The precision ceiling.** With a single `q0` the scale can never exceed `60 - b_out - 1` bits, however much of the security budget is left: from `N=16384` on, the 60-bit word limit, not the budget, caps precision. The two-prime final modulus lifts that limit at the cost of one prime (about 1.6x the runtime of a depth-1 model at `N=8192`). Precision then levels off at about 35-37 bits even at `Δ=2^60`, because CKKS encoding in SEAL / TenSEAL goes through double-precision numbers.
 
 **What the data decides.** The scales are not derived from the data: an earlier version used the finest per-feature resolution of the data as a lower bound on the scale, but input resolution says nothing about the precision an output needs, the bound almost never applied, and where it did it excluded the only fast configuration of a security level. The data instead sizes `q0` (through the output bound), supplies the test vectors that measure every candidate and drive the step-down, and, for classifiers, gives the decision margins (information only). A precision floor comes only from the user (`data.target_precision_bits`).
 
@@ -57,6 +59,7 @@ Assumptions and consequences:
 - Decrypted results stay with the client. Returning decrypted CKKS outputs to an untrusted party enables key-recovery attacks (Li & Micciancio, EUROCRYPT 2021).
 - In this implementation both kinds of query are simulated locally, so runtimes are the service's computation (plus encryption and decryption); network and serialization costs come on top in a deployment.
 - The descriptor treats features independently. For tabular data this is a good approximation; for structured inputs such as images it is not (see the benchmark results for MNIST).
+- The descriptor itself reveals per-feature statistics. `DataDescriptor.private(X, epsilon, bounds)` releases an ε-differentially private descriptor instead (Laplace mechanism on the mean and second moment of every feature, data clipped to public per-feature `bounds`, which are released as the minimum and maximum; ε is split evenly over the 2·d statistics). The bounds must be public, e.g. domain knowledge, not computed from the private data.
 
 ## Security model
 
@@ -144,7 +147,7 @@ All results are measured on the test vectors. Each saved run contains `config.js
 
 | Section | Field | Default | Meaning |
 |---|---|---|---|
-| `data` | `num_samples` | 10 | number of representative test vectors |
+| `data` | `num_samples` | 50 | representative test vectors encrypted per candidate (the error is a maximum over them; more vectors, less noise) |
 | | `method` | `truncated_normal` | sampler (`truncated_normal`, `gaussian`, `uniform`, `student_t`) |
 | | `max_decimal_bits` | 40 | cap on the precision estimated from decision margins |
 | | `target_precision_bits` | `None` | optional precision target: raises the lowest scale considered, and the fastest configuration meeting it is reported per security level |
@@ -158,7 +161,7 @@ All results are measured on the test vectors. Each saved run contains `config.js
 | | `timing_repeats` | 1 | timed passes over the inputs |
 | | `n_threads` | `None` | TenSEAL threads (`None` = all cores) |
 | `search` | `profile` | `default` | `fast` (N ≤ 16384, no spare levels), `default`, `full` (adds a grid of 4 scales from the floor, `q0` offsets, every special prime size, one spare level), `broad_grid` (the benchmark's reference grid, see below) or `custom` |
-| | `poly_degrees`, `min_scale_bits` (lowest scale considered, 20), `num_scale_options` (grid scales from that floor in addition to the budget scales, 0 = none), `full_grid` (grid up to the largest feasible scale), `scale_step`, `base_scale_buffer` (added to a precision target to get the floor), `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
+| | `poly_degrees`, `min_scale_bits` (lowest scale considered, 20), `num_scale_options` (grid scales from that floor in addition to the budget scales, 0 = none), `full_grid` (grid up to the largest feasible scale), `scale_step`, `base_scale_buffer` (added to a precision target to get the floor), `budget_scales`, `budget_extra_levels`, `extra_levels`, `q0_deltas`, `q0_rounding` (`exact` and/or `round10`), `two_prime_q0`, `max_qL`, `special_primes` (`min_max` or `all`), `step_down_bits` (0 = off) | from profile | override single fields of the profile |
 | | `runtime_tolerance` | 0.05 | runtimes within this relative difference count as equal (knee, endpoints, ε-recall) |
 | | `precision_tolerance_bits` | 1.5 | precisions within this many bits count as equal ("most precise" endpoint, ε-recall); twice the largest standard deviation measured by `benchmark_suite.noise` |
 | | `min_precision_bits` | 0 | reported points (knee, endpoints) must reach this precision |
@@ -167,7 +170,7 @@ All results are measured on the test vectors. Each saved run contains `config.js
 
 **Metrics.** Runtime is the median wall-clock latency of one encrypted inference (encrypt, evaluate, decrypt); key generation is excluded and reported separately. Error is the worst-case absolute difference to the plaintext model over every output slot and test vector; precision is `-log2(error)`, and *relative precision* is `-log2(error / max|output|)`, which is comparable across workloads with outputs of different sizes. A candidate whose error is at least the largest output magnitude is reported as a failure ("no precision left").
 
-**Tuning cost.** Each candidate needs its own keys, which a client would send to the service, and several encrypted queries. For every candidate the tool records the key generation time, the serialized size of the public context with the relinearization and Galois keys (never the secret key), and the size of one input and one output ciphertext; `run_info.json` sums them over the search. For example, the evaluation keys alone are about 19 MiB at `N=8192` and about 540 MiB at `N=32768` with 7 primes.
+**Tuning cost.** Each candidate needs its own keys, which a client would send to the service, and several encrypted queries. For every candidate the tool records the key generation time, the serialized size of the public context with the relinearization and Galois keys (never the secret key), and the size of one input and one output ciphertext; `run_info.json` sums them over the search. For example, the evaluation keys alone are about 19 MiB at `N=8192` and about 540 MiB at `N=32768` with 7 primes. These are upper bounds: TenSEAL generates Galois keys for every rotation, while SEAL and OpenFHE can generate only the rotations a model uses.
 
 The knee recommendation is only a starting point: the tool's output is the trade-off itself, i.e. the evaluated candidates, the Pareto front for each security level and its endpoints.
 
@@ -183,7 +186,7 @@ For every workload this runs the tool, a broad reference grid (`broad_grid`), th
 
 **Workloads.** Eight datasets were used while the candidate-generation rules were developed: diabetes, california housing, concrete (regression), breast cancer, heart disease, ionosphere (binary), wine, iris (3 classes), plus MNIST with a depth-5 square-activation network. Three **held-out** datasets were not used during development and measure how the rules generalize: credit default (binary, 23 numeric features with values up to about 10^6), bank marketing (binary, categorical features one-hot encoded) and wine quality (regression). Tables mark them with `held_out`.
 
-**Reference grid.** `broad_grid` is a broad but finite grid, not an exhaustive search: every scale from 2^20 to the largest feasible one in 5-bit steps (independent of the data), `q0` from its minimum in steps of 10 up to +50 bits, every special prime size in steps of 10, 0 to 4 spare levels, and `N` in {8192, 16384, 32768}. It uses the same `q0` rule as the tool. Every tool candidate is also a grid candidate (tested).
+**Reference grid.** `broad_grid` is a broad but finite grid, not an exhaustive search: every scale from 2^20 to 2^60 in 5-bit steps (independent of the data); `q0` both sized exactly and rounded up to a multiple of 10, each with offsets up to +50 bits in steps of 10; one- and two-prime final moduli; the smallest valid special prime and every multiple of 10 above it; 0 to 4 spare levels; and `N` in {8192, 16384, 32768}. It uses the same output bound as the tool. Every tool candidate is also a grid candidate (tested).
 
 **Baselines.** *Tutorial defaults*, what a non-expert copies from the TenSEAL / SEAL examples (`N=8192`, `[60, 40, 40, 60]`, `Δ=2^40`); and *expert defaults*, the rule of thumb of OpenFHE's examples (60-bit first prime, 50-bit scaling primes without spare levels, 60-bit special prime, the smallest `N` whose 128-bit budget fits).
 
@@ -199,5 +202,6 @@ For every workload this runs the tool, a broad reference grid (`broad_grid`), th
 - `baseline` — each baseline against every configuration the tool evaluated: the fastest one at least as precise, and the most precise one at least as fast, measured on the same real rows.
 - `tuning_cost` — candidates, encrypted queries, search and key generation time, and the data a client would exchange with the service (evaluation keys and ciphertexts).
 - `model_quality` — plaintext accuracy or R² of each model on the client split.
+- `dp_robustness` — the tool run with an ε-differentially private descriptor (ε = 1 and 0.1; public bounds simulated by each feature's range over the whole dataset): output bound, the knee point per security level, whether it equals the one chosen with the exact descriptor, and its precision, prediction agreement and overflow rate on real rows. MNIST is skipped.
 
-**Measurement noise.** `python -m benchmark_suite.noise --datasets ... --repeats 5` measures the configurations the tool reports several times, each with new keys and encryption noise, and suggests `runtime_tolerance` and `precision_tolerance_bits` as twice the largest observed coefficient of variation and standard deviation. On four datasets the runtime varied by at most 0.8% and the precision by up to 0.76 bits, since the error is a maximum over 10 random test vectors.
+**Measurement noise.** `python -m benchmark_suite.noise --datasets ... --repeats 5` measures the configurations the tool reports several times, each with new keys and encryption noise, and suggests `runtime_tolerance` and `precision_tolerance_bits` as twice the largest observed coefficient of variation and standard deviation. With 10 test vectors the precision varied by a median of 0.25 bits and at most 1.8 bits across key draws, and the runtime by at most 3.6%; hence the default of 50 test vectors and the tolerances of 5% and 1.5 bits.

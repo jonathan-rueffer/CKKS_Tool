@@ -36,7 +36,7 @@ def task_metrics(task: str, outputs) -> dict:
         for dec, plain in outputs
     ]))
     return {"max_relative_error": max(rel), "prediction_agreement": agreement,
-            "overflow_rate": overflow, "num_rows": len(outputs),
+            "overflow_rate": overflow,
             "max_output": max(float(np.max(np.abs(plain))) for _, plain in outputs)}
 
 
@@ -75,6 +75,7 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
                 runtime=float(np.median(runtimes)), # median runtime across dataset samples
                 runtime_std=float(np.std(runtimes)),
                 **task_metrics(getattr(self.model, "task", "regression"), outputs),
+                num_rows=len(self.sample_idx), # distinct rows (timing repeats reuse them)
             )
 
         # handle case of encrypted inference fails

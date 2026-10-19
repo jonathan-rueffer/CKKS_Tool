@@ -1,5 +1,7 @@
 import argparse
 import json
+
+import numpy as np
 import logging
 from datetime import datetime
 from pathlib import Path
@@ -42,6 +44,13 @@ def _evaluate_candidates(params_list, model, X, config, policy):
 MAX_REAL_ROWS = 5000
 REAL_ROWS = {"mnist": 200}
 
+# encrypted test vectors per candidate: the default (50), fewer where one inference takes seconds
+TEST_VECTORS = {"mnist": 10}
+
+# privacy budgets of the differentially private descriptor experiment, and workloads skipped
+DP_EPSILONS = (1.0, 0.1)
+NO_DP = {"mnist"}
+
 
 def model_quality(model, X, y) -> dict:
     import numpy as np
@@ -67,6 +76,8 @@ def run_dataset(name: str, output_root: Path, config=None, broad_grid: bool = Tr
     loader, trainer, _ = DATASETS[name]
     config = load_experiment_config(config).to_dict()
     config["evaluation"]["num_samples"] = REAL_ROWS.get(name, MAX_REAL_ROWS)
+    if name in TEST_VECTORS:
+        config["data"]["num_samples"] = TEST_VECTORS[name]
     config = load_experiment_config(config)
 
     X, y = loader()
@@ -191,6 +202,41 @@ def run_dataset(name: str, output_root: Path, config=None, broad_grid: bool = Tr
 
     with open(run_dir / "baseline.json", "w") as f:
         json.dump({"baselines": baselines}, f, indent=2)
+
+    # 6) the tool with an epsilon-differentially private descriptor: does it make the same
+    #    choices, and are they still safe on real rows? The public feature bounds DP needs are
+    #    simulated by each feature's range over the whole dataset (domain knowledge).
+    if name not in NO_DP:
+        bounds = (np.min(X, axis=0), np.max(X, axis=0))
+        dp_cfg = config.to_dict()
+        dp_cfg["evaluation"]["measure_cost"] = False
+        dp_cfg = load_experiment_config(dp_cfg)
+        exact = {sec: p for sec, p, _ in tool.results.recommended_params}
+
+        dp_rows = []
+        for eps in DP_EPSILONS:
+            dp_descriptor = DataDescriptor.private(X_client, eps, bounds, rng=0)
+            dp_tool = Experiment(dp_descriptor, model, config=dp_cfg)
+            dp_tool.run()
+            dp_tool.save(run_dir / "dp" / f"eps_{eps}", timestamped=False)
+            for sec, p, tv in dp_tool.results.recommended_params:
+                dp_rows.append({
+                    "epsilon": eps,
+                    "target_security": sec,
+                    "output_int_bits": dp_tool.results.output_int_bits,
+                    "output_int_bits_non_dp": tool.results.output_int_bits,
+                    "poly_degree": p.poly_degree,
+                    "chain": list(p.chain),
+                    "same_as_non_dp": exact.get(sec) == p,
+                    # same N, scale and number of primes (e.g. differs only in the special prime)
+                    "same_class_as_non_dp": exact.get(sec) is not None and (
+                        (exact[sec].poly_degree, exact[sec].log_scale, len(exact[sec].chain))
+                        == (p.poly_degree, p.log_scale, len(p.chain))),
+                    "real_rows": on_real_rows(p),
+                })
+        with open(run_dir / "dp.json", "w") as f:
+            json.dump(dp_rows, f, indent=2)
+        logger.info("[%s] differentially private descriptor done", name)
     logger.info("[%s] baseline done", name)
 
     return run_dir

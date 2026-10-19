@@ -77,3 +77,22 @@ def test_front_endpoints_and_target_match():
     assert most_precise_point(front).name == 2
     assert fastest_meeting(front, 32).name == 2
     assert fastest_meeting(front, 40) is None
+
+
+def test_private_descriptor():
+    rng = np.random.default_rng(0)
+    data = rng.normal(loc=5.0, scale=2.0, size=(20000, 3))
+    bounds = (np.full(3, -5.0), np.full(3, 15.0))
+
+    d = DataDescriptor.private(data, epsilon=1.0, bounds=bounds, rng=1)
+    assert d.min == (-5.0,) * 3 and d.max == (15.0,) * 3 # the public bounds are released
+    np.testing.assert_allclose(d.mean, 5.0, atol=0.1)     # little noise for n = 20,000
+    np.testing.assert_allclose(d.std, 2.0, atol=0.3)
+
+    # smaller epsilon, more noise; same seed, reproducible
+    assert DataDescriptor.private(data, 1.0, bounds, rng=1) == d
+    tiny = DataDescriptor.private(data[:50], epsilon=0.01, bounds=bounds, rng=1)
+    assert all(-5.0 <= m <= 15.0 for m in tiny.mean) # clipped into the bounds
+
+    with pytest.raises(ValueError):
+        DataDescriptor.private(data, epsilon=0.0, bounds=bounds)
