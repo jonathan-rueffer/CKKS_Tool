@@ -151,7 +151,7 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
                 "baseline_precision_bits": real["precision_bits"],
                 "baseline_runtime": real["runtime"],
                 "baseline_prediction_agreement": real.get("prediction_agreement"),
-                "baseline_overflow_rate": real.get("overflow_rate"),
+                "baseline_catastrophic_rate": real.get("catastrophic_rate"),
                 "real_rows": real.get("num_rows"),
             }
             if rec["found"]:
@@ -163,13 +163,41 @@ def baseline_comparison(name: str, run: Path) -> list[dict]:
                     "tool_precision_bits": tool["precision_bits"],
                     "tool_runtime": tool["runtime"],
                     "tool_prediction_agreement": tool.get("prediction_agreement"),
-                    "tool_overflow_rate": tool.get("overflow_rate"),
+                    "tool_catastrophic_rate": tool.get("catastrophic_rate"),
                     # measured on the same real rows
                     "speedup": safe_ratio(real["runtime"], tool["runtime"]),
                     "precision_gain_bits": tool["precision_bits"] - real["precision_bits"],
                 })
             rows.append(row)
     return rows
+
+
+def _group(name: str) -> str:
+    return "mnist" if name == "mnist" else ("held-out" if name in HELD_OUT else "development")
+
+
+def _tolerances(run: Path) -> tuple[float, float]:
+    with open(run / "tool" / "config.json") as f:
+        evaluation = json.load(f)["evaluation"]
+    return evaluation.get("runtime_tolerance", 0.05), evaluation.get("precision_tolerance_bits", 1.5)
+
+
+# where a reported point stands relative to the reference grid at its security level: on the
+# grid's Pareto front (exact), or near it, i.e. no grid configuration is both more than
+# runtime_tol faster and more than precision_tol_bits more precise. Uses the grid's own
+# measurement of the point (paired). None without a grid run or if the grid lacks the point.
+def _grid_position(grid, key, sec, runtime_tol, precision_tol):
+    if grid is None:
+        return None, None
+    admissible = at_least(grid, sec)
+    match = restrict_to(admissible, {key})
+    if match.empty:
+        return None, None
+    point = match.iloc[0]
+    on_front = key in keys(pareto_front(admissible))
+    beaten = ((admissible["runtime"] * (1 + runtime_tol) < point["runtime"])
+              & (admissible["precision_bits"] > point["precision_bits"] + precision_tol)).any()
+    return bool(on_front), bool(not beaten)
 
 
 def recommendations(name: str, run: Path) -> list[dict]:
@@ -179,16 +207,23 @@ def recommendations(name: str, run: Path) -> list[dict]:
     with open(run / "real_rows.json") as f:
         points = json.load(f)
     tv = {(r["poly_degree"], r["scale"], r["chain"]): r for r in successful(load_param_search(run / "tool" / "param_search.csv")).to_dict("records")}
+    grid = successful(load_param_search(run / "broad_grid" / "param_search.csv")) if (run / "broad_grid").exists() else None
+    runtime_tol, precision_tol = _tolerances(run)
     rows = []
     for p in points:
         inf = p["real_rows"]
-        test = tv.get((p["poly_degree"], 2 ** p["log_scale"], tuple(p["chain"])), {})
+        key = (p["poly_degree"], 2 ** p["log_scale"], tuple(p["chain"]))
+        test = tv.get(key, {})
+        on_front, near_front = _grid_position(grid, key, p["target_security"], runtime_tol, precision_tol)
         rows.append({
             "dataset": name,
             "task": info.get("model_task"),
             "estimated_required_bits": info.get("estimated_required_bits"),
+            "group": _group(name),
             "target_security": p["target_security"],
             "point": p["point"],
+            "on_grid_front": on_front,
+            "near_grid_front": near_front,
             "N": p["poly_degree"],
             "chain": tuple(p["chain"]),
             "precision_bits_test_vectors": test.get("precision_bits"),
@@ -197,10 +232,37 @@ def recommendations(name: str, run: Path) -> list[dict]:
             "runtime": inf["runtime"],
             "prediction_agreement": inf.get("prediction_agreement"),
             "max_relative_error": inf.get("max_relative_error"),
-            "overflow_rate": inf.get("overflow_rate"),
+            "catastrophic_rate": inf.get("catastrophic_rate"),
             "real_rows": inf.get("num_rows"),
         })
     return rows
+
+
+# how often the empirical output bound / chain sizing failed: candidates that deviated
+# catastrophically (or failed otherwise) on the synthetic test vectors, the step-downs this
+# triggered, and the catastrophic rate of the reported configurations on real client rows
+def failures(name: str, run: Path) -> list[dict]:
+    tool = load_param_search(run / "tool" / "param_search.csv")
+    info = _run_info(run / "tool")
+    failed = tool[tool["status"] != "success"]
+    catastrophic = failed["failure_reason"].astype(str).str.contains("catastrophic")
+    real = []
+    if (run / "real_rows.json").exists():
+        with open(run / "real_rows.json") as f:
+            real = [p["real_rows"] for p in json.load(f)]
+    rates = [r.get("catastrophic_rate", 0.0) for r in real]
+    return [{
+        "dataset": name,
+        "group": _group(name),
+        "candidates": len(tool),
+        "failed_on_test_vectors": len(failed),
+        "catastrophic_on_test_vectors": int(catastrophic.sum()),
+        "other_failures": int((~catastrophic).sum()),
+        "step_downs": info.get("num_step_downs", 0),
+        "reported_configurations": len(real),
+        "max_catastrophic_rate_real_rows": max(rates) if rates else float("nan"),
+        "real_rows": max((r.get("num_rows", 0) for r in real), default=0),
+    }]
 
 
 def tuning_cost(name: str, run: Path) -> list[dict]:
@@ -239,8 +301,36 @@ def dp_robustness(name: str, run: Path) -> list[dict]:
         "same_class_as_non_dp": r.get("same_class_as_non_dp"),
         "precision_bits": r["real_rows"]["precision_bits"],
         "prediction_agreement": r["real_rows"].get("prediction_agreement"),
-        "overflow_rate": r["real_rows"].get("overflow_rate"),
+        "catastrophic_rate": r["real_rows"].get("catastrophic_rate"),
     } for r in rows]
+
+
+# how much latency varies with the prime sizes alone: within each (N, number of primes) group of
+# the reference grid, the configurations differ only in the bit sizes of their primes (scale, q0,
+# special prime), so the spread of their median latencies measures the effect of prime size.
+def latency_vs_prime_size(name: str, run: Path) -> list[dict]:
+    if not (run / "broad_grid").exists():
+        return []
+    grid = successful(load_param_search(run / "broad_grid" / "param_search.csv"))
+    rows = []
+    for (n, length), g in grid.groupby(["poly_degree", "chain_length"]):
+        if len(g) < 2:
+            continue
+        rt = g["runtime"].astype(float)
+        rows.append({
+            "dataset": name,
+            "N": int(n),
+            "primes": int(length),
+            "configurations": len(g),
+            "scales": int(g["log_scale"].nunique()),
+            "latency_median_ms": 1000 * float(rt.median()),
+            "latency_spread": float(rt.max() / rt.min() - 1), # (slowest - fastest) / fastest
+            "latency_iqr_rel": float((rt.quantile(0.75) - rt.quantile(0.25)) / rt.median()),
+            # rank correlation between scale and latency within the group (0 = no dependence)
+            "spearman_scale_latency": (float(g["log_scale"].corr(rt, method="spearman"))
+                                       if g["log_scale"].nunique() > 1 else float("nan")),
+        })
+    return rows
 
 
 def plot_test_vectors(name: str, run: Path, out: Path):
@@ -307,7 +397,7 @@ def main(argv=None):
     out = args.results / "summary"
     out.mkdir(parents=True, exist_ok=True)
 
-    efficiency, vectors, baseline, recs, quality, costs, dp = [], [], [], [], [], [], []
+    efficiency, vectors, baseline, recs, quality, costs, dp, latency, fails = [], [], [], [], [], [], [], [], []
     for dataset_dir in sorted(p for p in args.results.iterdir() if p.is_dir() and p.name != "summary"):
         run = latest_run(dataset_dir)
         if run is None:
@@ -321,6 +411,8 @@ def main(argv=None):
         recs += recommendations(name, run)
         costs += tuning_cost(name, run)
         dp += dp_robustness(name, run)
+        latency += latency_vs_prime_size(name, run)
+        fails += failures(name, run)
         if (run / "model_quality.json").exists():
             with open(run / "model_quality.json") as f:
                 quality.append({"dataset": name, **json.load(f)})
@@ -329,7 +421,8 @@ def main(argv=None):
 
     for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline"),
                        (recs, "recommendations"), (quality, "model_quality"), (costs, "tuning_cost"),
-                       (dp, "dp_robustness")):
+                       (dp, "dp_robustness"), (latency, "latency_vs_prime_size"),
+                       (fails, "failures")):
         if rows:
             df = pd.DataFrame(rows)
             _write(df, out, stem)

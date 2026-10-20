@@ -1,6 +1,14 @@
 import time
 import numpy as np
 
+
+# raised when a result deviates catastrophically from the plaintext model: an error at least as
+# large as the outputs themselves leaves no correct bit. The usual cause is that a value
+# overflowed the modulus (e.g. intermediate products too large for the top modulus), but a scale
+# too small for the noise has the same effect; the check does not identify the cause.
+class CatastrophicDeviation(ArithmeticError):
+    pass
+
 '''
 This file contains the shared measurement loop used by both evaluators.
 '''
@@ -12,7 +20,7 @@ This file contains the shared measurement loop used by both evaluators.
 #   - every input is timed timing_repeats times with a monotonic high-resolution clock
 #   - the error of an input is the maximum absolute error over its output slots
 def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing_repeats: int = 1,
-                            raise_on_overflow: bool = True):
+                            raise_on_catastrophic: bool = True):
     inputs = [np.asarray(x) for x in inputs]
 
     for i in range(warmup_runs):
@@ -37,12 +45,10 @@ def run_encrypted_inference(backend, model, inputs, warmup_runs: int = 1, timing
             outputs.append((dec_y, plain_y))
             max_output = max(max_output, float(np.max(np.abs(plain_y))))
 
-    # an error at least as large as the outputs themselves leaves no correct bit: either the
-    # result overflowed the modulus (e.g. intermediate products too large for the top modulus)
-    # or the scale is too small for the noise. Either way the configuration is unusable.
-    if raise_on_overflow and max_output > 0 and max(errors) >= max_output:
-        raise OverflowError(
-            f"no precision left (overflow or scale too small): error {max(errors):.3g} "
+    # see CatastrophicDeviation
+    if raise_on_catastrophic and max_output > 0 and max(errors) >= max_output:
+        raise CatastrophicDeviation(
+            f"catastrophic deviation (likely overflow, or scale too small): error {max(errors):.3g} "
             f">= max |output| {max_output:.3g}"
         )
 

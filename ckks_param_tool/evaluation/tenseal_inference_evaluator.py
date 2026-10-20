@@ -17,7 +17,7 @@ recommended parameter set will be evaluated on real dataset entries.
 #                          of that row (most meaningful for regression)
 #   prediction_agreement : fraction of rows whose predicted class is the same encrypted and in
 #                          plaintext (classification only)
-#   overflow_rate        : fraction of rows whose error is at least as large as their output
+#   catastrophic_rate    : fraction of rows with a catastrophic deviation (likely overflow)
 def task_metrics(task: str, outputs) -> dict:
     rel = [
         float(np.max(np.abs(dec - plain)) / max(float(np.max(np.abs(plain))), 1e-300))
@@ -28,15 +28,16 @@ def task_metrics(task: str, outputs) -> dict:
         agreement = float(np.mean([
             np.array_equal(predict(task, dec), predict(task, plain)) for dec, plain in outputs
         ]))
-    # a row overflowed if its error is at least as large as its own output and at least 1. An
-    # overflow wraps the value modulo q0 at scale Delta, so its error is about q0 / Delta >= 2;
-    # the floor of 1 keeps rows whose output is close to 0 from being counted for tiny errors.
-    overflow = float(np.mean([
+    # a row deviates catastrophically if its error is at least as large as its own output and at
+    # least 1. The usual cause is an overflow: a value that wraps modulo the final modulus at
+    # scale Delta changes by about q0 / Delta >= 2, so the floor of 1 keeps rows whose output is
+    # close to 0 from being counted for small errors. The check does not prove the cause.
+    catastrophic = float(np.mean([
         float(np.max(np.abs(dec - plain))) >= max(float(np.max(np.abs(plain))), 1.0)
         for dec, plain in outputs
     ]))
     return {"max_relative_error": max(rel), "prediction_agreement": agreement,
-            "overflow_rate": overflow,
+            "catastrophic_rate": catastrophic,
             "max_output": max(float(np.max(np.abs(plain))) for _, plain in outputs)}
 
 
@@ -67,7 +68,7 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
                 self.X[self.sample_idx, :],
                 warmup_runs=self.config.warmup_runs,
                 timing_repeats=self.config.timing_repeats,
-                raise_on_overflow=False, # overflowing rows are counted, see task_metrics
+                raise_on_catastrophic=False, # such rows are counted, see task_metrics
             )
 
             return InferenceEvaluationResult(

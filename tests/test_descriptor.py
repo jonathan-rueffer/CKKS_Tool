@@ -96,3 +96,33 @@ def test_private_descriptor():
 
     with pytest.raises(ValueError):
         DataDescriptor.private(data, epsilon=0.0, bounds=bounds)
+
+
+def test_private_descriptor_noise_scales():
+    # the Laplace scales must equal sensitivity / (epsilon / 2d) under replace-one adjacency
+    class RecordingRng:
+        def __init__(self):
+            self.scales = []
+
+        def laplace(self, scale):
+            self.scales.append(np.asarray(scale, dtype=float))
+            return np.zeros_like(np.asarray(scale, dtype=float))
+
+    import ckks_param_tool.data.descriptor as module
+
+    data = np.array([[-1.0, 2.0], [0.5, 3.0], [1.0, 4.0], [0.0, 2.5]])
+    lo, hi = np.array([-2.0, 1.0]), np.array([2.0, 5.0])
+    rng = RecordingRng()
+    original = module.np.random.default_rng
+    module.np.random.default_rng = lambda seed=None: rng
+    try:
+        DataDescriptor.private(data, epsilon=1.0, bounds=(lo, hi))
+    finally:
+        module.np.random.default_rng = original
+
+    n, d = data.shape
+    eps_each = 1.0 / (2 * d)
+    mean_scale, second_scale = rng.scales
+    np.testing.assert_allclose(mean_scale, (hi - lo) / (n * eps_each))
+    # feature 0: [-2, 2] contains 0, so x^2 ranges over [0, 4]; feature 1: [1, 5] -> [1, 25]
+    np.testing.assert_allclose(second_scale, np.array([4.0 - 0.0, 25.0 - 1.0]) / (n * eps_each))

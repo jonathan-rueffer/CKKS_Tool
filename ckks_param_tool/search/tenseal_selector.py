@@ -1,3 +1,5 @@
+import numpy as np
+
 from .selector import ParameterSelector
 from ckks_param_tool.params import SECURITY_LEVELS
 from ckks_param_tool.plotting import results_to_dataframe
@@ -16,9 +18,13 @@ This file contains the class that defines the searching and selection of paramet
 class CKKSParameterSelector(ParameterSelector):
     # target_bits: an optional precision target; if set, the fastest configuration meeting it is
     # reported for every security level as well
+    # shuffle_seed: candidates are evaluated in a random order seeded with it (None = generation
+    # order). Generation order sorts by scale, so drift in the machine's state over a long run
+    # (temperature, clock frequency) would otherwise be confounded with the scale.
     def __init__(self, evaluator, search_space, recommendation_policy: str = "knee",
                  target_bits: float | None = None, runtime_tol: float = 0.05,
-                 precision_tol_bits: float = 1.5, min_precision_bits: float = 0.0):
+                 precision_tol_bits: float = 1.5, min_precision_bits: float = 0.0,
+                 shuffle_seed: int | None = 0):
         self.evaluator = evaluator # how to evaluate a parameter set
         self.search_space = search_space # how to generate candidates
         self.recommendation_policy = recommendation_policy
@@ -26,18 +32,24 @@ class CKKSParameterSelector(ParameterSelector):
         self.runtime_tol = runtime_tol
         self.precision_tol_bits = precision_tol_bits
         self.min_precision_bits = min_precision_bits
+        self.shuffle_seed = shuffle_seed
         self.results = None
         self.step_downs = 0
 
     # this function generates the candidate parameters and evaluates them. A candidate that fails
-    # (e.g. overflow) is retried with the same structure at a lower scale until one works; every
+    # (e.g. a catastrophic deviation, typically an overflow) is retried with the same structure at a lower scale until one works; every
     # attempt is kept in the results.
     def select(self):
         results = []
         seen = set()
         self.step_downs = 0
 
-        for params in self.search_space.generate():
+        candidates = self.search_space.generate()
+        if self.shuffle_seed is not None:
+            order = np.random.default_rng(self.shuffle_seed).permutation(len(candidates))
+            candidates = [candidates[i] for i in order]
+
+        for params in candidates:
             while params is not None and params not in seen:
                 seen.add(params)
                 result = self.evaluator.evaluate(params)

@@ -166,3 +166,34 @@ def test_selector_steps_down_after_failure():
     evaluated = {p.chain for p, _ in results}
     assert (59, 55, 59) in evaluated and (54, 50, 54) in evaluated
     assert selector.step_downs > 0
+
+
+def test_selector_evaluates_in_seeded_random_order():
+    from ckks_param_tool.evaluation import ParameterEvaluationResult
+    from ckks_param_tool.search import CKKSParameterSelector
+
+    order = []
+
+    class Evaluator:
+        def evaluate(self, p):
+            order.append(p)
+            return ParameterEvaluationResult(error=1e-9, runtime=1.0, security_bits=p.security_score, status="success")
+
+    def run(seed):
+        order.clear()
+        CKKSParameterSelector(Evaluator(), CKKSParameterSearchSpace(1, output_int_bits=3), shuffle_seed=seed).select()
+        return list(order)
+
+    generated = CKKSParameterSearchSpace(1, output_int_bits=3).generate()
+    assert run(None) == generated
+    assert run(0) == run(0) != generated # reproducible, and not the scale-sorted order
+    assert sorted(run(0), key=str) == sorted(generated, key=str)
+
+
+def test_final_modulus_needing_more_than_two_primes_is_not_generated():
+    policy = CKKSSearchPolicy()
+    # scale 55 + 70 output bits + sign = 126 bits > 2 x 60
+    assert policy.final_modulus(55, 70, ChainStructure(two_prime_q0=True)) is None
+    assert policy.final_modulus(55, 70, ChainStructure()) is None
+    # 120 bits still fit in (60, 60)
+    assert policy.final_modulus(55, 64, ChainStructure(two_prime_q0=True)) == (60, 60)

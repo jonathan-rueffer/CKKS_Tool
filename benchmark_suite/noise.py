@@ -29,8 +29,15 @@ same test vectors.
 
 writes results/noise/<timestamp>/noise.csv (one row per measurement) and summary.json with the
 spread per configuration and the suggested tolerances:
-    runtime_tolerance        = 2 x the largest coefficient of variation of the median runtime
-    precision_tolerance_bits = 2 x the largest standard deviation of the precision (bits)
+    runtime_tolerance        = 2 x the 90th percentile of the configurations' coefficients of
+                               variation of the median runtime
+    precision_tolerance_bits = 2 x the 90th percentile of the configurations' standard deviations
+                               of the precision (bits)
+The 90th percentile rather than the maximum keeps a single outlier draw (with 5 repetitions per
+configuration) from setting the tolerance alone; the maxima are reported as well.
+
+With --write-config PATH the suggested tolerances are merged into that experiment config file, so
+that a following benchmark run uses the measured values.
 '''
 
 logger = logging.getLogger("noise")
@@ -86,9 +93,13 @@ def summarize(df: pd.DataFrame) -> tuple[pd.DataFrame, dict]:
     ).reset_index()
 
     suggested = {
-        "runtime_tolerance": float(2 * per_config["runtime_cv"].max()),
-        "precision_tolerance_bits": float(2 * per_config["precision_std"].max()),
+        "runtime_tolerance": float(2 * per_config["runtime_cv"].quantile(0.9)),
+        "precision_tolerance_bits": float(2 * per_config["precision_std"].quantile(0.9)),
+        "median_runtime_cv": float(per_config["runtime_cv"].median()),
+        "p90_runtime_cv": float(per_config["runtime_cv"].quantile(0.9)),
         "max_runtime_cv": float(per_config["runtime_cv"].max()),
+        "median_precision_std_bits": float(per_config["precision_std"].median()),
+        "p90_precision_std_bits": float(per_config["precision_std"].quantile(0.9)),
         "max_precision_std_bits": float(per_config["precision_std"].max()),
         "configurations": int(len(per_config)),
     }
@@ -101,6 +112,8 @@ def main(argv=None):
     parser.add_argument("--repeats", type=int, default=5)
     parser.add_argument("--output", type=Path, default=Path("results") / "noise")
     parser.add_argument("--config", type=Path, default=None)
+    parser.add_argument("--write-config", type=Path, nargs="*", default=[],
+                        help="experiment config files to merge the suggested tolerances into")
     args = parser.parse_args(argv)
 
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s: %(message)s")
@@ -117,6 +130,15 @@ def main(argv=None):
 
     print(per_config.round(4).to_string(index=False))
     print(json.dumps(suggested, indent=2))
+
+    for path in args.write_config:
+        config = json.loads(path.read_text()) if path.exists() else {}
+        config.setdefault("evaluation", {}).update({
+            "runtime_tolerance": suggested["runtime_tolerance"],
+            "precision_tolerance_bits": suggested["precision_tolerance_bits"],
+        })
+        path.write_text(json.dumps(config, indent=2))
+        logger.info("tolerances written to %s", path)
 
 
 if __name__ == "__main__":

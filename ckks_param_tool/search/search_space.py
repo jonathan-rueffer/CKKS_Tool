@@ -60,8 +60,8 @@ class CKKSParameterSearchSpace:
 
     # the same structure (N, final modulus kind and sizing, spare levels, q0 offset, special
     # prime rule) at the next lower scale that SEAL can build, or None once the lowest scale
-    # considered is passed. Used when a candidate fails or overflows: the intermediate values
-    # were too large for its modulus.
+    # considered is passed. Used when a candidate fails or deviates catastrophically, typically
+    # because intermediate values were too large for its modulus.
     def step_down(self, params: CKKSParams) -> CKKSParams | None:
         step = self.policy.step_down_bits
         structure = self.structure_of.get(params)

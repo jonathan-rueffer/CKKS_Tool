@@ -239,6 +239,7 @@ class Experiment:
             runtime_tol=self.config.evaluation.runtime_tolerance,
             precision_tol_bits=self.config.evaluation.precision_tolerance_bits,
             min_precision_bits=self.config.evaluation.min_precision_bits,
+            shuffle_seed=self.config.evaluation.random_state,
         )
 
         # generate the search space and evaluate it

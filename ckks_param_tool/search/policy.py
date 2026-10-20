@@ -50,8 +50,9 @@ minimum is used, sized exactly. Budget scales are also tried with spare levels
 (budget_extra_levels, default one): before the first rescale a value carries scale Delta^2, so at
 the largest scales the top modulus can be too small for the intermediate products (e.g. large
 raw inputs times weights). A spare level adds that headroom. In addition, a candidate whose
-evaluation fails or overflows is retried with the same structure step_down_bits lower (see
-CKKSParameterSearchSpace.step_down), so the search finds the largest scale that works.
+evaluation fails or deviates catastrophically (typically an overflow) is retried with the same
+structure step_down_bits lower (see CKKSParameterSearchSpace.step_down), so the search finds the
+largest scale that works.
 '''
 
 # grid of candidate scales (bits): budget scales and step-downs stay on multiples of this
@@ -117,7 +118,7 @@ class CKKSSearchPolicy:
     # multiple of 10 above it
     special_primes: str = "min_max"
 
-    # when a candidate fails or overflows, retry it this many bits lower (0 = off)
+    # when a candidate fails or deviates catastrophically, retry it this many bits lower (0 = off)
     step_down_bits: int = 5
 
     def __post_init__(self):
@@ -173,13 +174,17 @@ class CKKSSearchPolicy:
         if not structure.two_prime_q0:
             return (needed,) if needed <= MAX_PRIME_BITS else None
 
-        # two primes only where one cannot hold the output
+        # two primes only where one cannot hold the output, and only while two suffice: a final
+        # modulus needing more than 2 x 60 bits is not supported (no candidate is generated)
         if needed <= MAX_PRIME_BITS:
             return None
         q0 = needed - MAX_PRIME_BITS
         if structure.rounding == "round10":
             q0 = self._round_to_10(q0)
-        return (max(q0, MIN_TWO_PRIME_Q0), MAX_PRIME_BITS)
+        q0 = max(q0, MIN_TWO_PRIME_Q0)
+        if q0 > MAX_PRIME_BITS:
+            return None
+        return (q0, MAX_PRIME_BITS)
 
     # the special prime should be at least as large as every other prime
     def special_prime_sizes(self, largest_prime: int, scale_bits: int) -> list[int]:

@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from ckks_param_tool.evaluation.encrypted_run import run_encrypted_inference
+from ckks_param_tool.evaluation.encrypted_run import run_encrypted_inference, CatastrophicDeviation
 
 
 class _IdentityBackend:
@@ -29,8 +29,8 @@ def test_small_error_passes():
     assert len(runtimes) == 1
 
 
-def test_overflow_is_reported():
-    with pytest.raises(OverflowError):
+def test_catastrophic_deviation_is_reported():
+    with pytest.raises(CatastrophicDeviation):
         run_encrypted_inference(_IdentityBackend(32.0), _SumModel(), [np.ones(3)])
 
 
@@ -62,20 +62,20 @@ def test_encrypted_multiclass_end_to_end():
     assert max(errors) < 1e-5
 
 
-def test_overflow_rate_is_per_row():
+def test_catastrophic_rate_is_per_row():
     from ckks_param_tool.evaluation.tenseal_inference_evaluator import task_metrics
 
     outputs = [(np.array([2.0 + 32.0]), np.array([2.0])),      # garbage row (error 32 > output 2)
                (np.array([100.0 + 1e-9]), np.array([100.0])),  # fine
                (np.array([1.0 + 1e-9]), np.array([1.0]))]      # fine
-    assert task_metrics("regression", outputs)["overflow_rate"] == 1 / 3
+    assert task_metrics("regression", outputs)["catastrophic_rate"] == 1 / 3
 
 
-def test_tiny_outputs_are_not_overflow():
+def test_tiny_outputs_are_not_catastrophic():
     from ckks_param_tool.evaluation.tenseal_inference_evaluator import task_metrics
 
     outputs = [(np.array([1e-8 + 1e-6]), np.array([1e-8]))] # logit near 0, small error
-    assert task_metrics("binary", outputs)["overflow_rate"] == 0.0
+    assert task_metrics("binary", outputs)["catastrophic_rate"] == 0.0
 
 
 def test_mnist_forward_handles_bias_before_matmul():
