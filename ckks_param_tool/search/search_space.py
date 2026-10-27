@@ -1,4 +1,4 @@
-from ckks_param_tool.params import CKKSParams, ALLOWED_CHAIN_BITS, chain_infeasibility_reason
+from ckks_param_tool.params import CKKSParams, chain_infeasibility_reason
 from .policy import CKKSSearchPolicy, ChainStructure
 
 '''
@@ -58,28 +58,40 @@ class CKKSParameterSearchSpace:
 
         return params
 
-    # the same structure (N, final modulus kind and sizing, spare levels, q0 offset, special
-    # prime rule) at the next lower scale that SEAL can build, or None once the lowest scale
-    # considered is passed. Used when a candidate fails or deviates catastrophically, typically
-    # because intermediate values were too large for its modulus.
+    # the retry for a candidate that fails or deviates catastrophically (typically an overflow):
+    # the same N, final modulus, number of levels and special prime at the next lower scale that
+    # SEAL can build, or None once the lowest scale considered is passed.
+    #
+    # The final modulus is KEPT, so each step adds step_down_bits of output headroom
+    # (final modulus bits - log2(Delta) - 1); re-sizing the final modulus for the lower scale
+    # would leave the headroom unchanged and could never fix an overflow. Overflow is only decided
+    # at decryption (the arithmetic is modular), so the final modulus is all that matters. A
+    # step-down also adds noise relative to the scale (5 bits less precision); it does not
+    # guarantee that the retried candidate is safe on other inputs. Only the scaling primes
+    # shrink, so the total modulus shrinks and the
+    # candidate stays at least as secure as the original. A retried candidate keeps the
+    # structure of its original (structure_of), but its final modulus is larger than the
+    # structure's minimum for its scale, so it is generally not a candidate of broad_grid.
     def step_down(self, params: CKKSParams) -> CKKSParams | None:
         step = self.policy.step_down_bits
         structure = self.structure_of.get(params)
         if step <= 0 or structure is None:
             return None
 
+        final_primes = 2 if structure.two_prime_q0 else 1
+        final, special = params.chain[:final_primes], params.chain[-1]
+        levels = len(params.chain) - final_primes - 1
+
         lower = max(self.policy.lower_scale_bits(self.target_bits), 2)
         scale = params.log_scale - step
         while scale >= lower:
-            chain = self.policy.chain(scale, self.depth, self.output_int_bits, structure)
-            if chain is not None:
-                candidate = CKKSParams(poly_degree=params.poly_degree, scale=2**scale, chain=chain)
-                if sum(chain) <= ALLOWED_CHAIN_BITS[params.poly_degree]:
-                    reason = chain_infeasibility_reason(params.poly_degree, chain)
-                    if not reason:
-                        self.structure_of.setdefault(candidate, structure)
-                        return candidate
-                    self.infeasible.append((candidate, reason))
+            chain = final + (scale,) * levels + (special,)
+            candidate = CKKSParams(poly_degree=params.poly_degree, scale=2**scale, chain=chain)
+            reason = chain_infeasibility_reason(params.poly_degree, chain)
+            if not reason:
+                self.structure_of.setdefault(candidate, structure)
+                return candidate
+            self.infeasible.append((candidate, reason))
             scale -= step
 
         return None

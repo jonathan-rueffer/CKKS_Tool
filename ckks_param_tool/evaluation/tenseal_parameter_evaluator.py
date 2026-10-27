@@ -1,7 +1,7 @@
 import time
 import numpy as np
 
-from .metrics import ParameterEvaluationResult
+from .metrics import ParameterEvaluationResult, coefficient_headroom_bits
 from .parameter_evaluator import ParameterEvaluator
 from .encrypted_run import run_encrypted_inference
 from ckks_param_tool.params import CKKSParams
@@ -40,12 +40,14 @@ class TenSEALParameterEvaluator(ParameterEvaluator):
                     "output_ciphertext_bytes": backend.ciphertext_bytes(self.model.forward_encrypted(enc_x)),
                 })
 
+            coefficients = []
             errors, runtimes, outputs = run_encrypted_inference(
                 backend,
                 self.model,
                 self.test_vectors,
                 warmup_runs=self.config.warmup_runs,
                 timing_repeats=self.config.timing_repeats,
+                coefficient_maxima=coefficients if self.config.measure_coefficients else None,
             )
 
             return ParameterEvaluationResult(
@@ -57,6 +59,10 @@ class TenSEALParameterEvaluator(ParameterEvaluator):
                 failure_reason="",
                 eval_seconds=time.perf_counter() - start,
                 max_output=max(float(np.max(np.abs(plain))) for _, plain in outputs),
+                max_coefficient=max(coefficients, default=float("nan")),
+                coefficient_headroom_bits=coefficient_headroom_bits(
+                    params.output_headroom_bits(self.model.multiplicative_depth),
+                    max(coefficients, default=float("nan"))),
                 encrypted_queries=self.config.warmup_runs + len(runtimes),
                 **cost,
             )

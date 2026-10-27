@@ -24,8 +24,11 @@ Chain structure (SEAL / TenSEAL convention):
                ("exact") or rounded up to a multiple of 10 ("round10"), or, when one prime of at
                most 60 bits cannot hold it, two primes (q0, 60): every prime is limited to 60
                bits, so with a single q0 the scale can never exceed 60 - output bits - 1 however
-               much security budget is left. The second prime lifts that ceiling.
-    - special: the key-switching prime. SEAL requires it to be at least as large as the largest
+               much security budget is left. The second prime lifts that ceiling. This capacity
+               rule is the tool's heuristic (SEAL does not check message sizes): what has to fit
+               is the largest coefficient of the result, which mixes every slot, not the output
+               (see TenSEALBackend.max_abs_coefficient).
+    - special: the key-switching prime. SEAL recommends it to be at least as large as the largest
                other prime. It is counted in the security budget but holds no data. A larger
                special prime lowers key-switching noise, so by default two sizes are tried: the
                smallest valid one (cheapest in budget) and the largest (max_qL, least noise).
@@ -43,16 +46,21 @@ cover both ends of the trade-off: the budget scale of a small N at a high securi
 cheap, less precise option, that of a larger N the precise one. Scales are not derived from the
 data: input resolution says nothing about the precision an output needs. A precision target set
 by the user only raises the lowest scale considered (min_scale_bits otherwise). Scales are
-multiples of 5 bits so that every candidate is also part of the benchmark's reference grid.
+multiples of 5 bits so that every candidate is also part of the benchmark's reference grid: a
+search-resolution choice, not an exhaustive search over all valid scales (the largest scale in
+1-bit steps is often 1-4 bits larger).
 
 Extra bits in q0 beyond its minimum only add headroom, not precision, so by default only the
 minimum is used, sized exactly. Budget scales are also tried with spare levels
-(budget_extra_levels, default one): before the first rescale a value carries scale Delta^2, so at
-the largest scales the top modulus can be too small for the intermediate products (e.g. large
-raw inputs times weights). A spare level adds that headroom. In addition, a candidate whose
-evaluation fails or deviates catastrophically (typically an overflow) is retried with the same
-structure step_down_bits lower (see CKKSParameterSearchSpace.step_down), so the search finds the
-largest scale that works.
+(budget_extra_levels, default one): a spare prime is never consumed by a rescale, so it stays in
+the final modulus and adds its bits to the output headroom (at the cost of one prime). Only the
+final modulus matters for overflow: CKKS additions, multiplications and rescalings preserve the
+message modulo the current modulus, so intermediate values may exceed it; only the decrypted
+result's coefficients have to fit (see TenSEALBackend.max_abs_coefficient). In addition, a
+candidate whose
+evaluation fails or deviates catastrophically (typically an overflow) is retried step_down_bits
+lower with the same final modulus (see CKKSParameterSearchSpace.step_down): every retry trades
+step_down_bits of precision for as many bits of output headroom.
 '''
 
 # grid of candidate scales (bits): budget scales and step-downs stay on multiples of this
@@ -118,7 +126,8 @@ class CKKSSearchPolicy:
     # multiple of 10 above it
     special_primes: str = "min_max"
 
-    # when a candidate fails or deviates catastrophically, retry it this many bits lower (0 = off)
+    # when a candidate fails or deviates catastrophically, retry it this many bits lower with the
+    # same final modulus, i.e. with this many more bits of output headroom (0 = off)
     step_down_bits: int = 5
 
     def __post_init__(self):

@@ -98,3 +98,52 @@ def test_mnist_forward_handles_bias_before_matmul():
     backend = TenSEALBackend(CKKSParams(16384, 2**45, (60,) + (45,) * 5 + (60,)))
     errors, _, _ = run_encrypted_inference(backend, model, x, warmup_runs=0)
     assert max(errors) < 1e-2
+
+
+class _WrappingBackend:
+    # simulates an overflow: values wrap modulo 2^(headroom + 1) into [-2^headroom, 2^headroom)
+    def __init__(self, params, depth):
+        self.params = params
+        self.wrap = 2.0 ** (params.output_headroom_bits(depth) + 1)
+
+    def encrypt(self, x):
+        return np.asarray(x, dtype=float)
+
+    def decrypt(self, y):
+        y = np.atleast_1d(y)
+        return (y + self.wrap / 2) % self.wrap - self.wrap / 2
+
+
+class _DepthOneSum(_SumModel):
+    multiplicative_depth = 1
+
+
+def test_overflow_that_keeps_its_sign_is_caught():
+    # output 50 with 3 bits of headroom wraps to 2: the error 48 is below the output, so the
+    # "error >= output" criterion alone would miss it
+    from ckks_param_tool.params import CKKSParams
+
+    params = CKKSParams(8192, 2**55, (59, 55, 59))
+    assert params.output_headroom_bits(1) == 3
+    backend = _WrappingBackend(params, depth=1)
+    assert backend.decrypt(50.0)[0] == pytest.approx(2.0)
+    with pytest.raises(CatastrophicDeviation, match="overflow"):
+        run_encrypted_inference(backend, _DepthOneSum(), [np.array([50.0])], warmup_runs=0)
+    # within the headroom nothing is flagged
+    run_encrypted_inference(backend, _DepthOneSum(), [np.array([7.0])], warmup_runs=0)
+
+
+def test_real_row_overflow_that_keeps_its_sign_is_counted():
+    from ckks_param_tool.evaluation.tenseal_inference_evaluator import task_metrics
+
+    outputs = [(np.array([2.0]), np.array([50.0])), (np.array([7.0]), np.array([7.0]))]
+    assert task_metrics("regression", outputs)["catastrophic_rate"] == 0.0 # the old criterion
+    assert task_metrics("regression", outputs, overflow_error=2.0 ** 3)["catastrophic_rate"] == 0.5
+
+
+def test_headroom_counts_every_unconsumed_prime():
+    from ckks_param_tool.params import CKKSParams
+
+    assert CKKSParams(8192, 2**40, (49, 40, 49)).output_headroom_bits(1) == 8
+    assert CKKSParams(8192, 2**60, (20, 60, 60, 60)).output_headroom_bits(1) == 19 # two-prime
+    assert CKKSParams(8192, 2**40, (49, 40, 40, 49)).output_headroom_bits(1) == 48 # spare level

@@ -19,6 +19,14 @@ def precision_bits(error: float) -> float:
     return -math.log2(error)
 
 
+# headroom bits left above the largest plaintext coefficient (nan if unknown): negative means
+# the evaluated inputs overflowed or came within noise of it
+def coefficient_headroom_bits(headroom_bits: int, max_coefficient: float) -> float:
+    if max_coefficient is None or not math.isfinite(max_coefficient):
+        return float("nan")
+    return headroom_bits - math.log2(max_coefficient) if max_coefficient > 0 else float("inf")
+
+
 # bits of precision relative to the output magnitude, comparable across workloads whose outputs
 # have different sizes: precision_bits(error) + log2(max |output|)
 def relative_precision_bits(error: float, max_output: float) -> float:
@@ -37,6 +45,11 @@ class ParameterEvaluationResult:
     runtime_std: float = float("nan") # standard deviation of the per-inference runtimes (s)
     eval_seconds: float = float("nan") # total time spent evaluating this candidate, keygen included (s)
     max_output: float = float("nan") # largest |plaintext output| over the test vectors
+    # largest |coefficient| of the decrypted results in units of the scale (it mixes the outputs
+    # with rotation partial sums and broadcast biases in the other slots) and the headroom bits
+    # left above it: what an overflow depends on (see TenSEALBackend.max_abs_coefficient)
+    max_coefficient: float = float("nan")
+    coefficient_headroom_bits: float = float("nan")
     # cost of evaluating this candidate through a remote service (if measured)
     keygen_seconds: float = float("nan") # context, relinearization and Galois key generation
     eval_key_bytes: float = float("nan") # serialized public context and evaluation keys
@@ -66,6 +79,8 @@ class InferenceEvaluationResult:
     catastrophic_rate: float = 0.0 # fraction of rows with a catastrophic deviation (see task_metrics)
     num_rows: int = 0 # number of real rows evaluated
     max_output: float = float("nan") # largest |plaintext output| over the rows
+    max_coefficient: float = float("nan") # largest |coefficient| of the decrypted results (scale units)
+    coefficient_headroom_bits: float = float("nan") # headroom bits left above it
 
     @property
     def precision_bits(self) -> float:

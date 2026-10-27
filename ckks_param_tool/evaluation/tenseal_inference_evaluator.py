@@ -1,6 +1,6 @@
 import numpy as np
 
-from .metrics import InferenceEvaluationResult
+from .metrics import InferenceEvaluationResult, coefficient_headroom_bits
 from .inference_evaluator import InferenceEvaluator
 from .encrypted_run import run_encrypted_inference
 from ckks_param_tool.params import CKKSParams
@@ -18,7 +18,7 @@ recommended parameter set will be evaluated on real dataset entries.
 #   prediction_agreement : fraction of rows whose predicted class is the same encrypted and in
 #                          plaintext (classification only)
 #   catastrophic_rate    : fraction of rows with a catastrophic deviation (likely overflow)
-def task_metrics(task: str, outputs) -> dict:
+def task_metrics(task: str, outputs, overflow_error: float = float("inf")) -> dict:
     rel = [
         float(np.max(np.abs(dec - plain)) / max(float(np.max(np.abs(plain))), 1e-300))
         for dec, plain in outputs
@@ -29,11 +29,13 @@ def task_metrics(task: str, outputs) -> dict:
             np.array_equal(predict(task, dec), predict(task, plain)) for dec, plain in outputs
         ]))
     # a row deviates catastrophically if its error is at least as large as its own output and at
-    # least 1. The usual cause is an overflow: a value that wraps modulo the final modulus at
-    # scale Delta changes by about q0 / Delta >= 2, so the floor of 1 keeps rows whose output is
-    # close to 0 from being counted for small errors. The check does not prove the cause.
+    # least 1, or at least the overflow threshold of the parameters (see CatastrophicDeviation).
+    # A value that wraps modulo the final modulus at scale Delta changes by about q0 / Delta >= 2,
+    # so the floor of 1 keeps rows whose output is close to 0 from being counted for small
+    # errors; the threshold catches wraps that keep the sign (error below the output). The check
+    # does not prove the cause.
     catastrophic = float(np.mean([
-        float(np.max(np.abs(dec - plain))) >= max(float(np.max(np.abs(plain))), 1.0)
+        float(np.max(np.abs(dec - plain))) >= min(max(float(np.max(np.abs(plain))), 1.0), overflow_error)
         for dec, plain in outputs
     ]))
     return {"max_relative_error": max(rel), "prediction_agreement": agreement,
@@ -62,6 +64,7 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
         try:
             backend = self.backend(params, n_threads=self.config.n_threads)
 
+            coefficients = []
             errors, runtimes, outputs = run_encrypted_inference(
                 backend,
                 self.model,
@@ -69,14 +72,19 @@ class TenSEALInferenceEvaluator(InferenceEvaluator):
                 warmup_runs=self.config.warmup_runs,
                 timing_repeats=self.config.timing_repeats,
                 raise_on_catastrophic=False, # such rows are counted, see task_metrics
+                coefficient_maxima=coefficients if self.config.measure_coefficients else None,
             )
+            headroom = params.output_headroom_bits(self.model.multiplicative_depth)
 
             return InferenceEvaluationResult(
                 error=max(errors), # maximum error across dataset samples
                 runtime=float(np.median(runtimes)), # median runtime across dataset samples
                 runtime_std=float(np.std(runtimes)),
-                **task_metrics(getattr(self.model, "task", "regression"), outputs),
+                **task_metrics(getattr(self.model, "task", "regression"), outputs,
+                               overflow_error=2.0 ** headroom),
                 num_rows=len(self.sample_idx), # distinct rows (timing repeats reuse them)
+                max_coefficient=max(coefficients, default=float("nan")),
+                coefficient_headroom_bits=coefficient_headroom_bits(headroom, max(coefficients, default=float("nan"))),
             )
 
         # handle case of encrypted inference fails

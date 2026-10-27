@@ -33,6 +33,18 @@ def test_fast_profile_end_to_end(tmp_path):
         assert (run_dir / name).exists()
     assert json.loads((run_dir / "config.json").read_text())["search"]["profile"] == "fast"
 
+    # the metadata needed to interpret a run without the source tree
+    info = json.loads((run_dir / "run_info.json").read_text())
+    assert info["environment"]["seal"] and info["environment"]["packages"]["tenseal"]
+    assert info["environment"]["git"]["commit"] is not None
+    assert info["search_policy"]["poly_degrees"] == [8192, 16384] # the resolved "fast" profile
+    assert info["search_policy"]["step_down_bits"] == 5
+    assert "2^output_headroom_bits" in info["safety_checks"]["catastrophic_deviation"]
+    assert info["output_margin_bits"] == 3 and "output_int_bits" in info
+    for entry in json.loads((run_dir / "recommended_params.json").read_text()):
+        assert {"coefficient_headroom_bits", "coefficient_headroom_below_margin",
+                "output_headroom_bits", "max_coefficient"} <= set(entry)
+
 
 def test_no_feasible_candidates_does_not_crash(tmp_path):
     from ckks_param_tool import load_breast_cancer_data
@@ -92,3 +104,17 @@ def test_raw_data_is_rejected():
     model = train_linear_regression_model(X, y)
     with pytest.raises(TypeError):
         Experiment(X, model)
+
+
+def test_low_coefficient_headroom_is_flagged_not_rejected():
+    # reported points keep their place; the flag only marks less spare room than the margin
+    from types import SimpleNamespace
+    from ckks_param_tool.config import load_experiment_config
+    from ckks_param_tool.evaluation import ParameterEvaluationResult
+
+    fake = SimpleNamespace(config=load_experiment_config({}))
+    result = lambda h: ParameterEvaluationResult(error=1e-6, runtime=1.0, security_bits=128, status="success",
+                                                 coefficient_headroom_bits=h)
+    assert Experiment._low_headroom(fake, result(0.5))
+    assert not Experiment._low_headroom(fake, result(3.0))
+    assert not Experiment._low_headroom(fake, result(float("nan"))) # not measured

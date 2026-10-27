@@ -129,16 +129,42 @@ def test_budget_scales_get_a_spare_level():
     assert any(space.structure_of[p].extra_levels == 1 for p in params)
 
 
-def test_step_down_keeps_structure():
+def _headroom(p, final_primes=1):
+    return sum(p.chain[:final_primes]) - p.log_scale - 1
+
+
+def test_step_down_keeps_final_modulus_and_adds_headroom():
     space = CKKSParameterSearchSpace(1, output_int_bits=3)
     params = space.generate()
     single = next(p for p in params if p.poly_degree == 8192 and p.chain == (59, 55, 59))
-    assert space.step_down(single).chain == (54, 50, 54) # exact q0, smallest special, same levels
+    lower = space.step_down(single)
+    assert lower.chain == (59, 50, 59) # same final modulus and special prime, same levels
+    assert _headroom(lower) == _headroom(single) + 5
+    assert sum(lower.chain) < sum(single.chain) and lower.security_score >= single.security_score
+    again = space.step_down(lower)
+    assert again.chain == (59, 45, 59) and _headroom(again) == _headroom(single) + 10
 
-    two = next(p for p in params if space.structure_of[p].two_prime_q0)
+
+def test_step_down_of_two_prime_final_modulus():
+    # the two-prime structure re-sized for a lower scale would no longer exist (one prime would
+    # suffice); keeping the final modulus makes it step down like every other structure
+    space = CKKSParameterSearchSpace(1, output_int_bits=3)
+    params = space.generate()
+    two = next(p for p in params if space.structure_of[p].two_prime_q0 and p.poly_degree == 8192)
     lower = space.step_down(two)
-    # a lower two-prime chain exists only while one prime still cannot hold the output
-    assert lower is None or (lower.chain[1] == 60 and len(lower.chain) == len(two.chain))
+    assert lower.chain[:2] == two.chain[:2] and lower.chain[-1] == two.chain[-1]
+    assert len(lower.chain) == len(two.chain)
+    assert _headroom(lower, 2) == _headroom(two, 2) + 5
+
+
+def test_step_down_keeps_spare_levels_and_depth():
+    space = CKKSParameterSearchSpace(3, output_int_bits=6)
+    for p in space.generate():
+        lower = space.step_down(p)
+        if lower is None:
+            continue
+        assert len(lower.chain) == len(p.chain) and lower.chain[-1] == p.chain[-1]
+        assert lower.log_scale == p.log_scale - 5
 
 
 def test_step_down_stops_at_the_floor():
@@ -146,6 +172,8 @@ def test_step_down_stops_at_the_floor():
     params = space.generate()
     assert min(p.log_scale for p in params) >= 50
     assert space.step_down(CKKSParams(8192, 2**50, (54, 50, 54))) is None # not a generated candidate
+    at_floor = next(p for p in params if p.log_scale == 50 and p.poly_degree == 8192)
+    assert space.step_down(at_floor) is None
 
 
 def test_selector_steps_down_after_failure():
@@ -164,7 +192,7 @@ def test_selector_steps_down_after_failure():
     selector = CKKSParameterSelector(Evaluator(), space)
     results = selector.select()
     evaluated = {p.chain for p, _ in results}
-    assert (59, 55, 59) in evaluated and (54, 50, 54) in evaluated
+    assert (59, 55, 59) in evaluated and (59, 50, 59) in evaluated
     assert selector.step_downs > 0
 
 

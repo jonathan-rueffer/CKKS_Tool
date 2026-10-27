@@ -37,8 +37,9 @@ class CKKSParameterSelector(ParameterSelector):
         self.step_downs = 0
 
     # this function generates the candidate parameters and evaluates them. A candidate that fails
-    # (e.g. a catastrophic deviation, typically an overflow) is retried with the same structure at a lower scale until one works; every
-    # attempt is kept in the results.
+    # (e.g. a catastrophic deviation, typically an overflow) is retried at a lower scale with the
+    # same final modulus, i.e. with more output headroom, until one works (see
+    # CKKSParameterSearchSpace.step_down); every attempt is kept in the results.
     def select(self):
         results = []
         seen = set()

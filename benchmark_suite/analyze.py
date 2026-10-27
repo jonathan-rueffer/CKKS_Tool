@@ -104,7 +104,10 @@ def search_efficiency(name: str, run: Path) -> list[dict]:
             "pareto_recall": pareto_recall(full_front, paired_front),
             "epsilon_recall": epsilon_recall(full_front, paired_front, runtime_tol, precision_tol),
             "epsilon_indicator": epsilon_indicator(full_front, paired_front),
-            "hypervolume_ratio": hypervolume_ratio(full_front, paired_front),
+            # the runtime axis is normalized over at least 5% of the fastest runtime (the default
+            # floor, used for the reported results); _tau uses the calibrated runtime tolerance
+            "hypervolume_ratio": hypervolume_ratio(full_front, paired_front, runtime_tol=0.05),
+            "hypervolume_ratio_floor_tau": hypervolume_ratio(full_front, paired_front, runtime_tol=runtime_tol),
             "hypervolume_ratio_no_floor": hypervolume_ratio(full_front, paired_front, runtime_tol=0.0),
             # the same metrics with the tool's own (separately timed) measurements
             "hypervolume_ratio_unpaired": hypervolume_ratio(full_front, tool_front),
@@ -265,6 +268,53 @@ def failures(name: str, run: Path) -> list[dict]:
     }]
 
 
+# what was measured how, per workload: every candidate is ENCRYPTED on the synthetic test
+# vectors (and re-measured with random client rows and naive vectors for the test-vector
+# comparison); only the reported configurations, the baselines and the configurations matched to
+# them, and the DP knee points are encrypted on real client rows. Nothing here is inferred from
+# plaintext outputs (the MNIST headroom check in abstract_data is, and says so).
+def validation_accounting(name: str, run: Path) -> list[dict]:
+    with open(run / "tool" / "config.json") as f:
+        config = json.load(f)
+    tool = load_param_search(run / "tool" / "param_search.csv")
+
+    # (N, chain) identifies a configuration: its scaling primes have the size of the scale
+    def key(p):
+        return (p["poly_degree"], tuple(p["chain"]))
+
+    real = {}
+    if (run / "real_rows.json").exists():
+        for p in json.loads((run / "real_rows.json").read_text()):
+            real.setdefault(key(p), set()).add("reported")
+    if (run / "baseline.json").exists():
+        for b in json.loads((run / "baseline.json").read_text())["baselines"]:
+            real.setdefault(key(b), set()).add("baseline")
+            for t in b["tool"]:
+                if t.get("found"):
+                    real.setdefault(key(t), set()).add("baseline match")
+    if (run / "dp.json").exists():
+        for d in json.loads((run / "dp.json").read_text()):
+            real.setdefault(key(d), set()).add("dp knee")
+    rows_per_config = max((r["real_rows"].get("num_rows", 0)
+                           for r in json.loads((run / "real_rows.json").read_text())), default=0) \
+        if (run / "real_rows.json").exists() else 0
+    tv_dir = run / "test_vectors"
+    return [{
+        "dataset": name,
+        "group": _group(name),
+        "test_vectors_per_candidate": config["data"]["num_samples"],
+        "encrypted_candidates": len(tool),
+        "test_vector_comparison_rows": config["data"]["num_samples"] if (tv_dir / "random_rows.csv").exists() else 0,
+        "real_row_configurations": len(real),
+        "real_row_reported": sum("reported" in v for v in real.values()),
+        "real_row_baselines_and_matches": sum(bool(v & {"baseline", "baseline match"}) for v in real.values()),
+        "real_row_dp": sum("dp knee" in v for v in real.values()),
+        "real_rows_per_configuration": rows_per_config,
+        "tool_candidates_not_on_real_rows": len(tool) - sum(
+            (r.poly_degree, tuple(r.chain)) in real for r in tool.itertuples()),
+    }]
+
+
 def tuning_cost(name: str, run: Path) -> list[dict]:
     info = _run_info(run / "tool")
     cost = info.get("tuning_cost")
@@ -397,7 +447,7 @@ def main(argv=None):
     out = args.results / "summary"
     out.mkdir(parents=True, exist_ok=True)
 
-    efficiency, vectors, baseline, recs, quality, costs, dp, latency, fails = [], [], [], [], [], [], [], [], []
+    efficiency, vectors, baseline, recs, quality, costs, dp, latency, fails, accounting = ([] for _ in range(10))
     for dataset_dir in sorted(p for p in args.results.iterdir() if p.is_dir() and p.name != "summary"):
         run = latest_run(dataset_dir)
         if run is None:
@@ -413,6 +463,7 @@ def main(argv=None):
         dp += dp_robustness(name, run)
         latency += latency_vs_prime_size(name, run)
         fails += failures(name, run)
+        accounting += validation_accounting(name, run)
         if (run / "model_quality.json").exists():
             with open(run / "model_quality.json") as f:
                 quality.append({"dataset": name, **json.load(f)})
@@ -422,7 +473,7 @@ def main(argv=None):
     for rows, stem in ((efficiency, "search_efficiency"), (vectors, "test_vectors"), (baseline, "baseline"),
                        (recs, "recommendations"), (quality, "model_quality"), (costs, "tuning_cost"),
                        (dp, "dp_robustness"), (latency, "latency_vs_prime_size"),
-                       (fails, "failures")):
+                       (fails, "failures"), (accounting, "validation_accounting")):
         if rows:
             df = pd.DataFrame(rows)
             _write(df, out, stem)

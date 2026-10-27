@@ -73,6 +73,9 @@ class EvaluationConfig:
     # record the cost of evaluating a candidate remotely: key generation time, serialized size
     # of the evaluation keys and of an input / output ciphertext (serialization takes time)
     measure_cost: bool = True
+    # record the largest plaintext coefficient of every result and the headroom left above it
+    # (diagnostic only, outside the timed region; adds about 10% to the search time)
+    measure_coefficients: bool = True
 
     def to_dict(self):
         return asdict(self)

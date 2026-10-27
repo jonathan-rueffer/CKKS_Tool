@@ -1,4 +1,5 @@
 import json
+from dataclasses import asdict
 import logging
 import time
 from datetime import datetime
@@ -111,8 +112,14 @@ class Experiment:
         plots_dir.mkdir()
         self.plot(output_dir=plots_dir, show=False)
 
-    @staticmethod
-    def _describe(params, result) -> dict:
+    # a reported configuration whose measured coefficient headroom is below the output margin:
+    # it worked on the test vectors, but with less spare room than the margin was meant to leave
+    # (information only: it is still reported, see README "What decides what")
+    def _low_headroom(self, result) -> bool:
+        h = result.coefficient_headroom_bits
+        return bool(np.isfinite(h) and h < self.config.data.output_margin_bits)
+
+    def _describe(self, params, result) -> dict:
         return {
             "security": params.security_score,
             "poly_degree": params.poly_degree,
@@ -125,6 +132,12 @@ class Experiment:
             "relative_precision_bits": result.relative_precision_bits,
             "runtime": result.runtime,
             "runtime_std": result.runtime_std,
+            # diagnostic only (see TenSEALBackend.max_abs_coefficient)
+            "output_headroom_bits": params.output_headroom_bits(self.model.multiplicative_depth),
+            "max_output": result.max_output,
+            "max_coefficient": result.max_coefficient,
+            "coefficient_headroom_bits": result.coefficient_headroom_bits,
+            "coefficient_headroom_below_margin": self._low_headroom(result),
         }
 
     # per security level: the recommendation (knee by default) and the front's endpoints
@@ -175,6 +188,14 @@ class Experiment:
             "num_step_downs": r.step_downs,
             "search_seconds": r.search_seconds,
             "tuning_cost": self._tuning_cost(),
+            # the resolved search policy (the profile's defaults with the config's overrides)
+            "search_policy": asdict(CKKSSearchPolicy.from_config(self.config.search)),
+            # how failures were detected and retried (changed after the final_v3 benchmark runs,
+            # which used "error >= max |output|" only and re-sized the final modulus on retry)
+            "safety_checks": {
+                "catastrophic_deviation": "error >= max |output| or error >= 2^output_headroom_bits",
+                "step_down": "same final modulus, levels and special prime; scale - step_down_bits",
+            },
             "environment": environment_info(self.config.evaluation.n_threads),
         }
         with open(run_dir / "run_info.json", "w") as f:
@@ -267,6 +288,14 @@ class Experiment:
 
         recommended = selection["recommended"] # (security, params, test-vector result)
         front_points = selection["front_points"] # (security, label, params, test-vector result)
+
+        reported = {(p, r.coefficient_headroom_bits) for _, p, r in recommended} | \
+                   {(p, r.coefficient_headroom_bits) for _, _, p, r in front_points}
+        for p, h in sorted(reported, key=str):
+            if np.isfinite(h) and h < data_cfg.output_margin_bits:
+                logger.warning("reported configuration N=%d %s keeps only %.1f bits of coefficient headroom "
+                               "(margin %d bits) on the test vectors", p.poly_degree, p.chain, h,
+                               data_cfg.output_margin_bits)
 
         if target_bits is not None:
             met = {sec for sec, label, _, _ in front_points if label == "fastest_meeting_target"}
