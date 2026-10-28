@@ -67,6 +67,13 @@ logger = logging.getLogger("diagnostics")
 
 TABULAR = [n for n in DATASETS if n != "mnist"]
 
+# workloads to run a diagnostic on (all by default; see --workloads)
+SELECTED: set[str] | None = None
+
+
+def _selected(names):
+    return [n for n in names if SELECTED is None or n in SELECTED]
+
 
 @lru_cache(maxsize=None)
 def workload(name: str):
@@ -88,7 +95,7 @@ def coefficients(results: Path, rows: int = 200) -> pd.DataFrame:
     from ckks_param_tool.search import expert_baseline_params
 
     out = []
-    for name in DATASETS:
+    for name in _selected(DATASETS):
         run = latest_run(results / name)
         if run is None:
             continue
@@ -126,7 +133,7 @@ def coefficients(results: Path, rows: int = 200) -> pd.DataFrame:
 def dp(results: Path, draws: int = 100, epsilons=(1.0, 0.1)) -> pd.DataFrame:
     config = DataConfig()
     out = []
-    for name in TABULAR:
+    for name in _selected(TABULAR):
         X, X_client, model = workload(name)
         exact_desc = DataDescriptor.from_data(X_client)
         tv = generate_test_vectors(exact_desc, config)
@@ -178,7 +185,7 @@ def scales(results: Path) -> pd.DataFrame:
     from ckks_param_tool.search import CKKSParameterSearchSpace, CKKSSearchPolicy
 
     out = []
-    for name in TABULAR:
+    for name in _selected(TABULAR):
         run = latest_run(results / name)
         if run is None:
             continue
@@ -225,7 +232,7 @@ def rules(results: Path) -> pd.DataFrame:
     from .metrics import at_least, hypervolume_ratio, keys, load_param_search, pareto_front, successful
 
     out = []
-    for name in TABULAR:
+    for name in _selected(TABULAR):
         run = latest_run(results / name)
         if run is None or not (run / "broad_grid").exists():
             continue
@@ -323,7 +330,7 @@ def mnist(results: Path) -> pd.DataFrame:
 # the output margin (what the tool would now flag as coefficient_headroom_below_margin)
 def reported(results: Path, rows: int = 500) -> pd.DataFrame:
     out = []
-    for name in TABULAR:
+    for name in _selected(TABULAR):
         run = latest_run(results / name)
         if run is None:
             continue
@@ -355,11 +362,20 @@ def main(argv=None):
     parser.add_argument("diagnostic", choices=sorted(DIAGNOSTICS))
     parser.add_argument("--results", type=Path, default=Path("results/final_v3"))
     parser.add_argument("--out", type=Path, default=Path("results/diagnostics"))
+    parser.add_argument("--workloads", nargs="+", default=None,
+                        help="only these workloads; their rows replace the same workloads' rows in an existing "
+                             "<out>/<diagnostic>.csv, the other rows are kept")
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     args.out.mkdir(parents=True, exist_ok=True)
+    global SELECTED
+    SELECTED = set(args.workloads) if args.workloads else None
     df = DIAGNOSTICS[args.diagnostic](args.results)
-    df.to_csv(args.out / f"{args.diagnostic}.csv", index=False)
+    path = args.out / f"{args.diagnostic}.csv"
+    if SELECTED is not None and path.exists():
+        old = pd.read_csv(path)
+        df = pd.concat([old[~old.workload.isin(SELECTED)], df], ignore_index=True)
+    df.to_csv(path, index=False)
     print(df.to_string(index=False))
 
 

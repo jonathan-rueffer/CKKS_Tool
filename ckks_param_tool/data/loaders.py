@@ -32,9 +32,16 @@ def load_iris_data():
     return data.data, data.target
 
 
+# AveRooms, AveBedrms, Population and AveOccup are heavy-tailed (e.g. 1,243 average occupants in
+# one block group); a linear model extrapolates wildly on those rows, so they are log-transformed
+CALIFORNIA_LOG_FEATURES = (2, 3, 4, 5)
+
+
 def load_california_housing_data():
     data = fetch_california_housing()
-    return data.data, data.target
+    X = np.array(data.data, dtype=float)
+    X[:, CALIFORNIA_LOG_FEATURES] = np.log1p(X[:, CALIFORNIA_LOG_FEATURES])
+    return X, data.target
 
 def load_concrete_data():
     data = fetch_openml(data_id=44959, as_frame=False)
