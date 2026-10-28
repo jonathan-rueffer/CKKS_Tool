@@ -1,0 +1,13 @@
+dataset,group,candidates,failed_on_test_vectors,catastrophic_on_test_vectors,other_failures,step_downs,reported_configurations,max_catastrophic_rate_real_rows,real_rows
+bank_marketing,held-out,24,0,0,0,0,9,0.0,5000
+breast_cancer,development,25,0,0,0,0,9,0.0,398
+california_housing,development,25,0,0,0,0,9,0.0,5000
+concrete,development,25,0,0,0,0,9,0.0,721
+credit_default,held-out,24,0,0,0,0,9,0.0,5000
+diabetes,development,25,0,0,0,0,9,0.0,309
+heart_disease,development,25,0,0,0,0,9,0.0,833
+ionosphere,development,25,0,0,0,0,9,0.0,245
+iris,development,25,0,0,0,0,9,0.0,105
+mnist,mnist,22,0,0,0,0,9,0.0,200
+wine,development,25,0,0,0,0,9,0.0,124
+wine_quality,held-out,25,0,0,0,0,9,0.0,4547

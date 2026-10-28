@@ -1,0 +1,13 @@
+dataset,task,accuracy,rows,r2
+bank_marketing,binary,0.9027079975985085,31647,
+breast_cancer,binary,0.9723618090452262,398,
+california_housing,regression,,14448,0.6572760958778378
+concrete,regression,,721,0.5673915477431772
+credit_default,binary,0.8103333333333333,21000,
+diabetes,regression,,309,0.4418547115345808
+heart_disease,binary,0.8103241296518607,833,
+ionosphere,binary,0.8653061224489796,245,
+iris,multiclass,0.9523809523809523,105,
+mnist,multiclass,0.9600816326530612,49000,
+wine,multiclass,0.967741935483871,124,
+wine_quality,regression,,4547,0.2928262221314165

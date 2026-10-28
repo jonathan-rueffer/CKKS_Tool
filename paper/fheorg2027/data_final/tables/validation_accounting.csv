@@ -1,0 +1,13 @@
+dataset,group,test_vectors_per_candidate,encrypted_candidates,test_vector_comparison_rows,real_row_configurations,real_row_reported,real_row_baselines_and_matches,real_row_dp,real_rows_per_configuration,tool_candidates_not_on_real_rows
+bank_marketing,held-out,50,24,50,10,7,5,4,5000,16
+breast_cancer,development,50,25,50,10,6,3,5,398,18
+california_housing,development,50,25,50,10,7,4,5,5000,17
+concrete,development,50,25,50,11,6,5,5,721,16
+credit_default,held-out,50,24,50,9,6,6,4,5000,17
+diabetes,development,50,25,50,12,6,5,5,309,17
+heart_disease,development,50,25,50,10,6,5,2,833,17
+ionosphere,development,50,25,50,12,7,4,5,245,18
+iris,development,50,25,50,11,6,5,5,105,16
+mnist,mnist,10,22,10,10,6,6,0,200,14
+wine,development,50,25,50,10,6,5,4,124,17
+wine_quality,held-out,50,25,50,12,6,5,4,4547,17

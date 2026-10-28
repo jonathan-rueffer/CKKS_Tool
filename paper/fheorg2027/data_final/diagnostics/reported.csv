@@ -1,0 +1,70 @@
+workload,N,chain,points,headroom_bits,rows,status,catastrophic_rate,coefficient_headroom_bits,below_margin
+diabetes,8192,"(58, 45, 60)",knee@128 fastest@128,12,309,success,0.0,4.71605325343265,False
+diabetes,8192,"(20, 60, 60, 60)",most_precise@128,19,309,success,0.0,11.716053253487797,False
+diabetes,16384,"(58, 45, 60)",knee@192 knee@256,12,309,success,0.0,4.7180615541563915,False
+diabetes,8192,"(53, 40, 53)",fastest@192,12,309,success,0.0,4.716053252998806,False
+diabetes,16384,"(20, 60, 60, 60)",most_precise@192 most_precise@256,19,309,success,0.0,11.718061554209186,False
+diabetes,8192,"(43, 30, 43)",fastest@256,12,309,success,0.0,4.716053076043496,False
+concrete,8192,"(56, 45, 60)",knee@128 fastest@128,10,500,success,0.0,3.3790663383178856,False
+concrete,8192,"(20, 60, 60, 60)",most_precise@128,19,500,success,0.0,12.379066338312724,False
+concrete,8192,"(51, 40, 60)",knee@192 fastest@192,10,500,success,0.0,3.3790663383696,False
+concrete,16384,"(20, 60, 60, 60)",most_precise@192 most_precise@256,19,500,success,0.0,12.37887631118076,False
+concrete,16384,"(56, 45, 56)",knee@256,10,500,success,0.0,3.3788763111857536,False
+concrete,8192,"(41, 30, 41)",fastest@256,10,500,success,0.0,3.379066384764693,False
+breast_cancer,8192,"(58, 50, 60)",knee@128 fastest@128,7,398,success,0.0,2.2157054624688106,True
+breast_cancer,8192,"(20, 60, 60, 60)",most_precise@128,19,398,success,0.0,14.215705462468822,False
+breast_cancer,16384,"(58, 50, 60)",knee@192 knee@256,7,398,success,0.0,2.2130878351825,True
+breast_cancer,8192,"(53, 45, 53)",fastest@192,7,398,success,0.0,2.21570546255088,True
+breast_cancer,16384,"(20, 60, 60, 60)",most_precise@192 most_precise@256,19,398,success,0.0,14.21308783517748,False
+breast_cancer,8192,"(38, 30, 38)",fastest@256,7,398,success,0.0,2.2157056328597475,True
+heart_disease,8192,"(57, 50, 60)",knee@128 fastest@128,6,500,success,0.0,3.237786347110448,False
+heart_disease,8192,"(20, 60, 60, 60)",most_precise@128,19,500,success,0.0,16.23778634711059,False
+heart_disease,16384,"(20, 60, 60, 60)",knee@192 most_precise@192 most_precise@256,19,500,success,0.0,16.23725400357871,False
+heart_disease,8192,"(52, 45, 52)",fastest@192,6,500,success,0.0,3.2377863471304833,False
+heart_disease,16384,"(57, 50, 57)",knee@256,6,500,success,0.0,3.237254003579756,False
+heart_disease,8192,"(37, 30, 37)",fastest@256,6,500,success,0.0,3.237786540275287,False
+wine,8192,"(57, 50, 57)",knee@128 fastest@128,6,124,success,0.0,7.068845665004908,False
+wine,8192,"(20, 60, 60, 60)",most_precise@128,19,124,success,0.0,20.06884566502533,False
+wine,8192,"(52, 45, 52)",knee@192 fastest@192,6,124,success,0.0,7.068845645353706,False
+wine,16384,"(20, 60, 60, 60)",most_precise@192 most_precise@256,19,124,success,0.0,20.517499530255265,False
+wine,16384,"(57, 50, 60)",knee@256,6,124,success,0.0,7.517499527486166,False
+wine,8192,"(37, 30, 37)",fastest@256,6,124,success,0.0,7.068780115617901,False
+ionosphere,8192,"(58, 50, 60)",knee@128,7,245,success,0.0,4.259418281580538,False
+ionosphere,8192,"(58, 50, 58)",fastest@128,7,245,success,0.0,4.259418281580247,False
+ionosphere,8192,"(20, 60, 60, 60)",most_precise@128,19,245,success,0.0,16.259418281580956,False
+ionosphere,16384,"(20, 60, 60, 60)",knee@192 most_precise@192 most_precise@256,19,245,success,0.0,16.269483877777436,False
+ionosphere,8192,"(53, 45, 53)",fastest@192,7,245,success,0.0,4.259418281302871,False
+ionosphere,16384,"(58, 50, 58)",knee@256,7,245,success,0.0,4.269483877758155,False
+ionosphere,8192,"(38, 30, 38)",fastest@256,7,245,success,0.0,4.259417349343158,False
+iris,8192,"(57, 50, 60)",knee@128 fastest@128,6,105,success,0.0,8.20379854982174,False
+iris,8192,"(20, 60, 60, 60)",most_precise@128,19,105,success,0.0,21.203798549842436,False
+iris,16384,"(20, 60, 60, 60)",knee@192 most_precise@192 most_precise@256,19,105,success,0.0,21.670239081666825,False
+iris,8192,"(52, 45, 52)",fastest@192,6,105,success,0.0,8.203798530355424,False
+iris,16384,"(57, 50, 60)",knee@256,6,105,success,0.0,8.670239078926752,False
+iris,8192,"(37, 30, 37)",fastest@256,6,105,success,0.0,8.20373248170433,False
+credit_default,8192,"(20, 60, 60, 60)",knee@128 most_precise@128,19,500,success,0.0,19.610857200655317,False
+credit_default,8192,"(59, 50, 59)",fastest@128,8,500,success,0.0,8.610857202541291,False
+credit_default,16384,"(59, 50, 60)",knee@192 knee@256,8,500,success,0.0,8.651443540481862,False
+credit_default,8192,"(49, 40, 60)",fastest@192,8,500,success,0.0,8.610862490886698,False
+credit_default,16384,"(20, 60, 60, 60)",most_precise@192 most_precise@256,19,500,success,0.0,19.651443535603473,False
+credit_default,8192,"(39, 30, 39)",fastest@256,8,500,success,0.0,8.600043638486696,False
+bank_marketing,8192,"(59, 50, 59)",knee@128,8,500,success,0.0,6.028787208559103,False
+bank_marketing,8192,"(59, 50, 60)",fastest@128,8,500,success,0.0,6.02878720855808,False
+bank_marketing,8192,"(20, 60, 60, 60)",most_precise@128,19,500,success,0.0,17.028787208558562,False
+bank_marketing,16384,"(20, 60, 60, 60)",knee@192 most_precise@192 most_precise@256,19,500,success,0.0,17.041372271785043,False
+bank_marketing,8192,"(49, 40, 60)",fastest@192,8,500,success,0.0,6.028787205706142,False
+bank_marketing,16384,"(59, 50, 60)",knee@256,8,500,success,0.0,6.041372271760629,False
+bank_marketing,8192,"(39, 30, 39)",fastest@256,8,500,success,0.0,6.028787499585824,False
+wine_quality,8192,"(57, 50, 60)",knee@128 fastest@128,6,500,success,0.0,0.5060012992580258,True
+wine_quality,8192,"(20, 60, 60, 60)",most_precise@128,19,500,success,0.0,13.506001299257967,False
+wine_quality,16384,"(20, 60, 60, 60)",knee@192 most_precise@192 most_precise@256,19,500,success,0.0,13.504359693362556,False
+wine_quality,8192,"(52, 45, 52)",fastest@192,6,500,success,0.0,0.5060012993027181,True
+wine_quality,16384,"(57, 50, 57)",knee@256,6,500,success,0.0,0.5043596933657408,True
+wine_quality,8192,"(37, 30, 37)",fastest@256,6,500,success,0.0,0.5060014496257592,True
+california_housing,8192,"(20, 60, 60, 60)",knee@128,19,500,success,0.0,13.939359402930439,False
+california_housing,8192,"(57, 50, 57)",fastest@128,6,500,success,0.0,0.9393594029305001,True
+california_housing,16384,"(20, 60, 60, 60, 60)",most_precise@128 most_precise@192,79,500,success,0.0,73.93796632629979,False
+california_housing,16384,"(57, 50, 60)",knee@192 knee@256,6,500,success,0.0,0.937966326302436,True
+california_housing,8192,"(37, 30, 60)",fastest@192,6,500,success,0.0,0.9393595275835533,True
+california_housing,8192,"(37, 30, 37)",fastest@256,6,500,success,0.0,0.9393595169550037,True
+california_housing,16384,"(20, 60, 60, 60)",most_precise@256,19,500,success,0.0,13.937966326299787,False
