@@ -9,6 +9,7 @@ description = "Data-driven decision support for CKKS parameter selection in priv
 readme = "README.md"
 requires-python = ">=3.10"
 authors = [{ name = "Jonathan Rueffer" }]
+license = { text = "MIT" }
 dependencies = [
     "tenseal>=0.3.16",
     "numpy>=2.0",

@@ -121,15 +121,15 @@ ckks_param_tool/
 └── cli.py         # Command line interface
 benchmark_suite/   # Benchmarks: tool vs reference grid, test vectors, baselines, noise
 tests/             # Unit and end-to-end tests
-legacy/            # Prototype scripts and the June 2026 results (pre-0.2, not reproducible with this version)
+paper/fheorg2027/  # Results, tables and figures of the FHE.org 2027 extended abstract (see below)
 reproduce.py       # Re-creates all benchmark tables and figures
 ```
 
 ## Installation
 
 ```bash
-git clone https://github.com/<your-username>/ckks-param-tool.git
-cd ckks-param-tool
+git clone https://github.com/jonathan-rueffer/CKKS_Tool.git
+cd CKKS_Tool
 
 python3 -m venv .venv
 source .venv/bin/activate
@@ -253,4 +253,26 @@ python reproduce.py --no-broad-grid        # skip the reference-grid comparison
 
 **Evaluation order.** Candidates are evaluated in a seeded random order (`evaluation.random_state`). In scale-sorted order, drift of the machine over a long run (temperature, clock frequency) showed up as a spurious correlation between scale and latency. With 10 test vectors the precision varied by a median of 0.25 bits and at most 1.8 bits across key draws, and the runtime by at most 3.6%; hence the default of 50 test vectors and the tolerances of 5% and 1.5 bits.
 
-**Diagnostics.** `python -m benchmark_suite.diagnostics {coefficients,dp,scales,rules,mnist} --results <run>` checks the tool's assumptions on an existing run without changing its search or metrics: the largest plaintext coefficient against the largest output (`coefficients`), the output bound under many differentially private descriptors (`dp`), what an exact (1-bit) largest scale would add (`scales`), how the rules the reference grid shares with the tool shape its front (`rules`), and an encrypted check of the MNIST digits whose logits exceed a configuration's headroom (`mnist`). Results go to `results/diagnostics/`.
+**Diagnostics.** `python -m benchmark_suite.diagnostics {coefficients,reported,dp,scales,rules,mnist} --results <run>` checks the tool's assumptions on an existing run without changing its search or metrics: the largest plaintext coefficient against the largest output (`coefficients`), the output bound under many differentially private descriptors (`dp`), what an exact (1-bit) largest scale would add (`scales`), how the rules the reference grid shares with the tool shape its front (`rules`), and an encrypted check of the MNIST digits whose logits exceed a configuration's headroom (`mnist`). Results go to `results/diagnostics/`.
+
+## Results of the FHE.org 2027 extended abstract
+
+The version used for the abstract is tagged `fheorg2027`. Its numbers come from one benchmark run on an Apple M5 Pro (15 threads, TenSEAL 0.3.18 with Microsoft SEAL 4.3, on AC power throughout): all workloads at commit `902a326`, California housing rerun at `328bc5d` after its features were log-transformed (see *Workloads*), with the same noise-calibrated tolerances.
+
+- `paper/fheorg2027/data_final/RESULTS.md`: every reported number with its definition and a reliability note; `tables/` and `diagnostics/` hold the underlying CSVs, `figures/` the plots.
+- `paper/fheorg2027/data_final/IMPLEMENTATION_REVIEW.md`: what the implementation guarantees and what it does not.
+- `paper/fheorg2027/tables/per_workload.tex` and `paper/fheorg2027/figures/heart_tradeoff.pdf`: the table and figure of the abstract.
+
+Raw measurements (`results/`) are not in the repository; `python reproduce.py` re-creates them, then
+
+```bash
+python -m benchmark_suite.abstract_data --results results/<run>      # RESULTS.md, tables, figures
+python -m benchmark_suite.paper_tables  --results results/<run>      # per-workload LaTeX table
+python -m benchmark_suite.paper_figures tradeoff --results results/<run> --dataset heart_disease
+```
+
+Latencies depend on the machine; candidate sets, test vectors and evaluation order are seeded and reproduce exactly.
+
+## License
+
+MIT, see `LICENSE`.

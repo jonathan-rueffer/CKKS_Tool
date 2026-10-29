@@ -1,5 +1,0 @@
-poly_degree,scale,chain,chain_sum,depth,max_err,runtime,security,total_memory,status,failure_reason
-16384,1152921504606846976,"(60, 60, 60, 60, 60)",300,5,inf,inf,0.0,629145600,failure,scale out of bounds
-16384,1152921504606846976,"(60, 60, 60, 60, 60, 60)",360,6,inf,inf,0.0,849346560,failure,scale out of bounds
-32768,1152921504606846976,"(60, 60, 60, 60, 60)",300,5,inf,inf,0.0,1258291200,failure,scale out of bounds
-32768,1152921504606846976,"(60, 60, 60, 60, 60, 60)",360,6,inf,inf,0.0,1698693120,failure,scale out of bounds
