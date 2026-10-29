@@ -257,7 +257,7 @@ python reproduce.py --no-broad-grid        # skip the reference-grid comparison
 
 ## Results of the FHE.org 2027 extended abstract
 
-J. Rueffer, *Client-Side Decision Support for CKKS Parameter Selection in Encrypted ML Inference*, extended abstract, FHE.org 2027. The version used for the abstract is tagged `v1.0`. Its numbers come from one benchmark run on an Apple M5 Pro (15 threads, TenSEAL 0.3.18 with Microsoft SEAL 4.3, on AC power throughout): all workloads at commit `902a326`, California housing rerun at `328bc5d` after its features were log-transformed (see *Workloads*), with the same noise-calibrated tolerances.
+J. Rueffer, *Client-Side Decision Support for CKKS Parameter Selection in Encrypted ML Inference*, extended abstract, FHE.org 2027. The version used for the abstract is tagged `v1.0`. Its numbers come from one benchmark run on an Apple M5 Pro (15 threads, TenSEAL 0.3.18 with Microsoft SEAL 4.3, on AC power throughout): all workloads at commit `36fc050`, California housing rerun at `d7160b2` after its features were log-transformed (see *Workloads*), with the same noise-calibrated tolerances. The run metadata, `RESULTS.md` and `IMPLEMENTATION_REVIEW.md` record these commits as `902a326` and `328bc5d` (and the earlier run as `1022b9c`, now `4449f9a`): the history was later rewritten to edit commit messages only, so the code at the old and new hashes is identical.
 
 - `paper/fheorg2027/data_final/RESULTS.md`: every reported number with its definition and a reliability note; `tables/` and `diagnostics/` hold the underlying CSVs, `figures/` the plots.
 - `paper/fheorg2027/data_final/IMPLEMENTATION_REVIEW.md`: what the implementation guarantees and what it does not.
