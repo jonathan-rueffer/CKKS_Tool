@@ -33,3 +33,4 @@ include = ["ckks_param_tool*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
